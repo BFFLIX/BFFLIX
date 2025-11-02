@@ -8,6 +8,7 @@ import PasswordReset from "../models/PasswordReset";
 import { signToken } from "../lib/jwt";
 import { generateToken, hashToken } from "../lib/resetToken";
 import { sendEmail } from "../lib/mailer";
+import { validatePassword } from "../lib/password";
 
 const r = Router();
 
@@ -18,7 +19,6 @@ function normEmail(e: string) {
 // ---------- Schemas ----------
 const signupSchema = z.object({
   email: z.string().email().transform(normEmail),
-  // Adjust rules if you want to keep min 6 instead
   password: z
     .string()
     .min(8, "Password must be at least 8 characters")
@@ -38,7 +38,6 @@ const requestResetSchema = z.object({
 
 const resetSchema = z.object({
   token: z.string().min(10),
-  // Keep same policy as signup for consistency
   password: z
     .string()
     .min(8, "Password must be at least 8 characters")
@@ -58,6 +57,18 @@ r.post("/signup", async (req, res) => {
 
   const { email, password, name } = parsed.data;
 
+  // Enforce strong password (policy + zxcvbn)
+  {
+    const pwCheck = validatePassword(password, { email, name });
+    if (!pwCheck.ok) {
+      return res.status(400).json({
+        error: "weak_password",
+        score: pwCheck.score,
+        details: pwCheck.errors,
+      });
+    }
+  }
+
   try {
     const existing = await User.findOne({ email });
     if (existing) return res.status(409).json({ error: "email_already_in_use" });
@@ -65,12 +76,12 @@ r.post("/signup", async (req, res) => {
     const passwordHash = await bcrypt.hash(password, 10);
     const user = await User.create({ email, name: name.trim(), passwordHash });
 
-    const token = signToken(String(user._id));
+    const token = signToken(String(user._id), (user as any).tokenVersion ?? 0);
+
     return res
       .status(201)
       .json({ token, user: { id: user._id, email: user.email, name: user.name } });
   } catch (err: any) {
-    // Race condition safety if unique index triggers
     if (err?.code === 11000) {
       return res.status(409).json({ error: "email_already_in_use" });
     }
@@ -79,7 +90,7 @@ r.post("/signup", async (req, res) => {
   }
 });
 
-// ---------- Login ----------
+// ---------- Login (lockout + suspension) ----------
 r.post("/login", async (req, res) => {
   const parsed = loginSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -91,14 +102,51 @@ r.post("/login", async (req, res) => {
 
   const { email, password } = parsed.data;
 
+  const MAX_FAILED = Number(process.env.LOGIN_MAX_FAILED ?? 5);
+  const LOCK_MINUTES = Number(process.env.LOGIN_LOCK_MIN ?? 60);
+
   try {
     const user = await User.findOne({ email });
     if (!user) return res.status(401).json({ error: "invalid_credentials" });
 
-    const ok = await bcrypt.compare(password, user.passwordHash);
-    if (!ok) return res.status(401).json({ error: "invalid_credentials" });
+    const isSuspended = Boolean((user as any).isSuspended);
+    if (isSuspended) {
+      return res.status(403).json({ error: "account_suspended" });
+    }
 
-    const token = signToken(String(user._id));
+    const lockUntil: Date | null = (user as any).lockUntil ?? null;
+    if (lockUntil && lockUntil.getTime() > Date.now()) {
+      return res.status(423).json({
+        error: "account_locked",
+        unlockAt: lockUntil.toISOString(),
+        message: "Too many failed attempts. Try again later or reset your password.",
+      });
+    }
+
+    const ok = await bcrypt.compare(password, (user as any).passwordHash);
+    if (!ok) {
+      const nextFailed = ((user as any).failedLoginCount || 0) + 1;
+
+      if (nextFailed >= MAX_FAILED) {
+        (user as any).failedLoginCount = 0;
+        (user as any).lockUntil = new Date(Date.now() + LOCK_MINUTES * 60 * 1000);
+      } else {
+        (user as any).failedLoginCount = nextFailed;
+        (user as any).lockUntil = null;
+      }
+
+      await user.save();
+      return res.status(401).json({ error: "invalid_credentials" });
+    }
+
+    // On success: clear counters and lock
+    if ((user as any).failedLoginCount || (user as any).lockUntil) {
+      (user as any).failedLoginCount = 0;
+      (user as any).lockUntil = null;
+      await user.save();
+    }
+
+    const token = signToken(String(user._id), (user as any).tokenVersion ?? 0);
     return res.json({
       token,
       user: { id: user._id, email: user.email, name: user.name },
@@ -123,11 +171,8 @@ r.post("/request-reset", async (req, res) => {
 
   try {
     const user = await User.findOne({ email }).select("_id email name").lean();
+    if (!user) return res.json({ ok: true }); // no enumeration
 
-    // Avoid account enumeration
-    if (!user) return res.json({ ok: true });
-
-    // Invalidate prior unused tokens
     await PasswordReset.deleteMany({ userId: user._id, usedAt: { $exists: false } });
 
     const raw = generateToken(32);
@@ -142,7 +187,7 @@ r.post("/request-reset", async (req, res) => {
     const subject = "Reset your BFFlix password";
     const text = `Hi${user.name ? " " + user.name : ""}, reset link (30 min): ${resetUrl}`;
     const html = `<p>Hi${user.name ? " " + user.name : ""},</p>
-                  <p>Click to reset (expires in 30 min): 
+                  <p>Click to reset (expires in 30 min):
                   <a href="${resetUrl}">Reset Password</a></p>`;
 
     try {
@@ -151,7 +196,6 @@ r.post("/request-reset", async (req, res) => {
         console.log("🔗 Email preview:", previewUrl);
       }
     } catch (e) {
-      // Email failures shouldn’t leak account info or block token creation
       console.error("Password reset email failed:", e);
     }
 
@@ -162,7 +206,7 @@ r.post("/request-reset", async (req, res) => {
   }
 });
 
-// ---------- Complete password reset ----------
+// ---------- Complete password reset (unlock + bump tokenVersion) ----------
 r.post("/reset", async (req, res) => {
   const parsed = resetSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -184,19 +228,49 @@ r.post("/reset", async (req, res) => {
     const user = await User.findById(record.userId);
     if (!user) return res.status(400).json({ error: "invalid_or_expired_token" });
 
-    user.passwordHash = await bcrypt.hash(password, 10);
+    // Enforce strong password during reset using user context
+    {
+      const pwCheck = validatePassword(password, { email: (user as any).email, name: (user as any).name });
+      if (!pwCheck.ok) {
+        return res.status(400).json({
+          error: "weak_password",
+          score: pwCheck.score,
+          details: pwCheck.errors,
+        });
+      }
+    }
+
+    (user as any).passwordHash = await bcrypt.hash(password, 10);
+    (user as any).failedLoginCount = 0;
+    (user as any).lockUntil = null;
+    (user as any).tokenVersion = ((user as any).tokenVersion ?? 0) + 1;
+
     await user.save();
 
-    // Mark token used so it can't be reused
     record.usedAt = new Date();
     await record.save();
 
-    // Optional: if you later add a tokenVersion field on User, bump it here to invalidate old JWTs.
     return res.json({ ok: true });
   } catch (err) {
     console.error("Reset error:", err);
     return res.status(500).json({ error: "internal_error" });
   }
+});
+
+// Public: password strength preview (optional for frontend UX)
+const strengthSchema = z.object({
+  password: z.string().min(1),
+  email: z.string().email().optional(),
+  name: z.string().optional(),
+});
+
+r.post("/password-strength", (req, res) => {
+  const parsed = strengthSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json(parsed.error.format());
+
+  const { password, email, name } = parsed.data;
+  const check = validatePassword(password, { email: email ?? "", name: name ?? "" });
+  return res.json({ ok: check.ok, score: check.score, details: check.errors });
 });
 
 export default r;
