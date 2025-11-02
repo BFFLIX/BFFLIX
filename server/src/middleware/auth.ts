@@ -1,6 +1,7 @@
 
+// server/src/middleware/auth.ts
 import { Request, Response, NextFunction } from "express";
-import { verifyToken } from "../lib/jwt";
+import { verifyToken, JwtPayload } from "../lib/jwt";
 import User from "../models/user";
 
 export interface AuthedRequest extends Request {
@@ -14,17 +15,33 @@ export async function requireAuth(
 ) {
   try {
     const auth = req.headers.authorization || "";
-    const token = auth.startsWith("Bearer ") ? auth.slice(7) : null;
-    if (!token) return res.status(401).json({ error: "Missing token" });
 
-    const payload = verifyToken(token) as { sub: string };
+    // Only accept Authorization: Bearer <token>
+    if (!auth.startsWith("Bearer ")) {
+      return res.status(401).json({ error: "missing_token" });
+    }
+    const token = auth.slice(7).trim();
+    if (!token) return res.status(401).json({ error: "missing_token" });
+
+    let payload: JwtPayload;
+    try {
+      payload = verifyToken(token);
+    } catch (e: any) {
+      if (e?.code === "TOKEN_EXPIRED") {
+        return res.status(401).json({ error: "token_expired" });
+      }
+      return res.status(401).json({ error: "invalid_token" });
+    }
+
     const user = await User.findById(payload.sub).select("_id isAdmin").lean();
-    if (!user) return res.status(401).json({ error: "Unauthorized" });
+    if (!user) {
+      // User no longer exists: treat as unauthorized
+      return res.status(401).json({ error: "unauthorized" });
+    }
 
-    // Keep isAdmin — remove the duplicate assignment that overwrote it
     req.user = { id: String(user._id), isAdmin: !!user.isAdmin };
     next();
   } catch {
-    return res.status(401).json({ error: "Invalid or expired token" });
+    return res.status(401).json({ error: "unauthorized" });
   }
 }

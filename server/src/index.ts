@@ -1,6 +1,6 @@
 
 // server/src/index.ts
-import "dotenv/config"; //Do not remove this line; it loads .env before anything else
+import "dotenv/config"; // Don't remove this line
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
@@ -26,12 +26,7 @@ const app = express();
 app.use(helmet());
 app.use(cors({ origin: env.CORS_ORIGIN, credentials: true }));
 app.use(express.json({ limit: "1mb" }));
-app.use(requireJson);
-
-// Block all routes (except /health) until DB is ready
-app.use(requireDbReady);
-
-// Basic root & health
+// Public endpoints first (should work even if DB is down)
 app.get("/", (_req, res) => {
   res.send("🎬 BFFlix API is running! Try /health for a status check.");
 });
@@ -45,8 +40,14 @@ app.get("/health", (_req, res) => {
   });
 });
 
-// Routes
-app.use("/auth", authLimiter, authRouter); // mount once, with limiter
+// Enforce JSON on mutating routes (skip / and /health)
+app.use(requireJson);
+
+// Block everything below until DB is ready
+app.use(requireDbReady);
+
+// Routes (now safely gated by DB readiness)
+app.use("/auth", authLimiter, authRouter); // limiter on auth only
 app.use("/me", meRouter);
 app.use("/circles", circleRouter);
 app.use("/posts", postsRouter);
@@ -56,7 +57,12 @@ app.use("/viewings", viewingsRouter);
 app.use("/tmdb", tmdbRouter);
 
 // Global error handler
-app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+app.use((
+  err: any,
+  _req: express.Request,
+  res: express.Response,
+  _next: express.NextFunction
+) => {
   if (err?.type === "entity.too.large") {
     return res.status(413).json({ error: "payload_too_large" });
   }
@@ -66,7 +72,7 @@ app.use((err: any, _req: express.Request, res: express.Response, _next: express.
 
 // Boot
 (async () => {
-  await connectToDB(); // reads MONGODB_URI from env and tracks readiness
+  await connectToDB(); // uses env.MONGODB_URI internally
   app.listen(env.PORT, () => {
     console.log(`🚀 BFFlix API on http://localhost:${env.PORT}`);
   });
