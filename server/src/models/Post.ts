@@ -24,6 +24,9 @@ const postSchema = new Schema(
     rating: { type: Number, min: 1, max: 5 },
     comment: { type: String, trim: true, maxlength: 1000 },
     watchedAt: { type: Date },
+
+    // Canonical key used for cross-post dedupe in feeds
+    canonicalId: { type: String, index: true },
   },
   {
     timestamps: true,
@@ -58,10 +61,33 @@ postSchema.pre("validate", function (next) {
   next();
 });
 
+// Compute canonicalId = `${authorId}:${type}:${tmdbId}:${YYYY-MM-DD}`
+postSchema.pre("save", function (next) {
+  const doc = this as any;
+
+  // Derive date from watchedAt if present; else createdAt; else now
+  const baseDate: Date =
+    doc.watchedAt instanceof Date
+      ? doc.watchedAt
+      : (doc.createdAt instanceof Date ? doc.createdAt : new Date());
+
+  // YYYY-MM-DD
+  const day = new Date(baseDate).toISOString().slice(0, 10);
+
+  if (doc.authorId && doc.type && doc.tmdbId && day) {
+    doc.canonicalId = `${doc.authorId}:${doc.type}:${doc.tmdbId}:${day}`;
+  }
+
+  next();
+});
+
 // Indexes — align with your queries and sorts
 postSchema.index({ circles: 1, createdAt: -1, _id: -1 }); // circle timelines
 postSchema.index({ authorId: 1, createdAt: -1, _id: -1 }); // my posts
 postSchema.index({ tmdbId: 1, type: 1 }); // helpful for lookups/dedup
+
+// Helpful for feed grouping & stable pagination
+postSchema.index({ canonicalId: 1, createdAt: -1 });
 
 export type PostDoc = InferSchemaType<typeof postSchema>;
 export default mongoose.model("Post", postSchema);

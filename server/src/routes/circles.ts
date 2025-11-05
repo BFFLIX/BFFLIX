@@ -25,6 +25,17 @@ const createSchema = z.object({
   members: z.array(objectId).optional(), // optional extra members besides creator
 });
 
+async function createUniqueInviteCode(retries = 3): Promise<string> {
+  for (let i = 0; i < retries; i++) {
+    const code = crypto.randomBytes(8).toString("hex");
+    // Optimistic: try an exists check to reduce duplicate key errors
+    const exists = await Circle.exists({ inviteCode: code });
+    if (!exists) return code;
+  }
+  // Fall through: let unique index enforce if all tries collide
+  return crypto.randomBytes(8).toString("hex");
+}
+
 r.post("/", requireAuth, async (req: AuthedRequest, res) => {
   const parsed = createSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json(parsed.error.format());
@@ -35,56 +46,28 @@ r.post("/", requireAuth, async (req: AuthedRequest, res) => {
   const count = await User.countDocuments({ _id: { $in: uniq } });
   if (count !== uniq.length) return res.status(400).json({ error: "One or more members do not exist" });
 
-  const inviteCode = visibility === "private" ? crypto.randomBytes(8).toString("hex") : undefined;
+  const inviteCode = visibility === "private" ? await createUniqueInviteCode() : undefined;
 
-  const circle = await Circle.create({
-    name,
-    description,
-    visibility,
-    createdBy: req.user!.id,
-    members: uniq,
-    inviteCode,
-  });
-
-  res.status(201).json({ id: circle.id });
-});
-
-// ---------- List my circles ----------
-r.get("/", requireAuth, async (req: AuthedRequest, res) => {
-  const circles = await Circle.find({ members: req.user!.id })
-    .select("_id name description visibility createdBy members createdAt updatedAt")
-    .sort({ updatedAt: -1 })
-    .lean();
-
-  // You can optionally return counts instead of full members list to reduce payload
-  const items = circles.map(c => ({
-    _id: c._id,
-    name: c.name,
-    description: c.description,
-    visibility: c.visibility,
-    createdBy: c.createdBy,
-    membersCount: Array.isArray(c.members) ? c.members.length : 0,
-    createdAt: c.createdAt,
-    updatedAt: c.updatedAt,
-  }));
-
-  res.json(items);
-});
-
-// ---------- Get one circle (members only for full details) ----------
-r.get("/:id", requireAuth, async (req: AuthedRequest, res) => {
-  const idCheck = objectId.safeParse(req.params.id);
-  if (!idCheck.success) return res.status(400).json({ error: "Invalid id" });
-
-  const circle = await Circle.findOne({ _id: idCheck.data, members: req.user!.id })
-    .select("_id name description visibility createdBy members createdAt updatedAt")
-    .lean();
-
-  if (!circle) return res.status(404).json({ error: "Circle not found or access denied" });
-  res.json(circle);
+  try {
+    const circle = await Circle.create({
+      name,
+      description,
+      visibility,
+      createdBy: req.user!.id,
+      members: uniq,
+      inviteCode,
+    });
+    res.status(201).json({ id: circle.id });
+  } catch (err: any) {
+    if (err?.code === 11000 && err?.keyPattern?.inviteCode) {
+      return res.status(409).json({ error: "invite_code_conflict" });
+    }
+    throw err;
+  }
 });
 
 // ---------- Discover public circles ----------
+// NOTE: must be BEFORE "/:id" so it's not swallowed by the :id route.
 r.get("/discover/list", requireAuth, async (req: AuthedRequest, res) => {
   const qp = paged.safeParse(req.query);
   if (!qp.success) return res.status(400).json(qp.error.format());
@@ -95,27 +78,65 @@ r.get("/discover/list", requireAuth, async (req: AuthedRequest, res) => {
   if (q) filter.name = { $regex: q, $options: "i" };
 
   const items = await Circle.find(filter)
-    .select("_id name description visibility createdAt members")
+    .select("name description visibility members createdAt")
     .sort({ createdAt: -1, _id: -1 })
     .skip((page - 1) * limit)
     .limit(limit)
-    .lean();
+    .lean({ virtuals: true });
 
-  // return count only, not member IDs
   res.json({
     page,
     limit,
-    items: items.map(c => ({
-      _id: c._id,
+    items: items.map((c: any) => ({
+      id: c.id, // virtual from model
       name: c.name,
       description: c.description,
       visibility: c.visibility,
       createdAt: c.createdAt,
       membersCount: Array.isArray(c.members) ? c.members.length : 0,
-      // isMember helps the client show "Join" vs "Open"
       isMember: Array.isArray(c.members) ? c.members.some((m: any) => String(m) === req.user!.id) : false,
     })),
   });
+});
+
+// ---------- List my circles (paged) ----------
+r.get("/", requireAuth, async (req: AuthedRequest, res) => {
+  const qp = paged.safeParse(req.query);
+  if (!qp.success) return res.status(400).json(qp.error.format());
+  const { page, limit } = qp.data;
+
+  const circles = await Circle.find({ members: req.user!.id })
+    .select("name description visibility createdBy members createdAt updatedAt")
+    .sort({ updatedAt: -1, _id: -1 })
+    .skip((page - 1) * limit)
+    .limit(limit)
+    .lean({ virtuals: true });
+
+  const items = circles.map((c: any) => ({
+    id: c.id, // virtual
+    name: c.name,
+    description: c.description,
+    visibility: c.visibility,
+    createdBy: c.createdBy,
+    membersCount: Array.isArray(c.members) ? c.members.length : 0,
+    createdAt: c.createdAt,
+    updatedAt: c.updatedAt,
+  }));
+
+  res.json({ page, limit, items });
+});
+
+// ---------- Get one circle (members only for full details) ----------
+r.get("/:id", requireAuth, async (req: AuthedRequest, res) => {
+  const idCheck = objectId.safeParse(req.params.id);
+  if (!idCheck.success) return res.status(400).json({ error: "Invalid id" });
+
+  const circle = await Circle.findOne({ _id: idCheck.data, members: req.user!.id })
+    .select("name description visibility createdBy members createdAt updatedAt")
+    .lean({ virtuals: true });
+
+  if (!circle) return res.status(404).json({ error: "Circle not found or access denied" });
+  res.json(circle);
 });
 
 // ---------- Join a circle ----------
@@ -131,7 +152,7 @@ r.post("/:id/join", requireAuth, async (req: AuthedRequest, res) => {
   if (!circle) return res.status(404).json({ error: "Circle not found" });
 
   // Already a member
-  if (circle.members.some(m => String(m) === req.user!.id)) {
+  if (circle.members.some((m) => String(m) === req.user!.id)) {
     return res.json({ ok: true, alreadyMember: true });
   }
 
@@ -157,14 +178,15 @@ r.post("/:id/leave", requireAuth, async (req: AuthedRequest, res) => {
   const idCheck = objectId.safeParse(req.params.id);
   if (!idCheck.success) return res.status(400).json({ error: "Invalid id" });
 
-  const circle = await Circle.findById(idCheck.data).select("_id createdBy members").lean();
+  const circle = await Circle.findById(idCheck.data).select("createdBy members").lean();
   if (!circle) return res.status(404).json({ error: "Circle not found" });
 
   if (String(circle.createdBy) === req.user!.id) {
     return res.status(400).json({ error: "Owner cannot leave their own circle. Delete it or transfer ownership." });
   }
 
-  const isMember = Array.isArray(circle.members) && circle.members.some(m => String(m) === req.user!.id);
+  const isMember =
+    Array.isArray(circle.members) && circle.members.some((m) => String(m) === req.user!.id);
   if (!isMember) return res.status(400).json({ error: "You are not a member of this circle" });
 
   await Circle.findByIdAndUpdate(circle._id, { $pull: { members: req.user!.id } });
@@ -176,19 +198,26 @@ r.post("/:id/rotate-invite", requireAuth, async (req: AuthedRequest, res) => {
   const idCheck = objectId.safeParse(req.params.id);
   if (!idCheck.success) return res.status(400).json({ error: "Invalid id" });
 
-  const circle = await Circle.findById(idCheck.data).select("_id createdBy visibility").lean();
+  const circle = await Circle.findById(idCheck.data).select("createdBy visibility").lean();
   if (!circle) return res.status(404).json({ error: "Circle not found" });
-  if (String(circle.createdBy) !== req.user!.id) return res.status(403).json({ error: "Only the owner can rotate invite code" });
+  if (String(circle.createdBy) !== req.user!.id)
+    return res.status(403).json({ error: "Only the owner can rotate invite code" });
 
   if (circle.visibility !== "private") {
-    // No invite code for public circles
     await Circle.findByIdAndUpdate(circle._id, { $unset: { inviteCode: "" } });
     return res.json({ ok: true, inviteCode: null });
   }
 
-  const inviteCode = crypto.randomBytes(8).toString("hex");
-  await Circle.findByIdAndUpdate(circle._id, { inviteCode });
-  res.json({ ok: true, inviteCode });
+  const inviteCode = await createUniqueInviteCode();
+  try {
+    await Circle.findByIdAndUpdate(circle._id, { inviteCode });
+    res.json({ ok: true, inviteCode });
+  } catch (err: any) {
+    if (err?.code === 11000 && err?.keyPattern?.inviteCode) {
+      return res.status(409).json({ error: "invite_code_conflict" });
+    }
+    throw err;
+  }
 });
 
 // ---------- Update circle (owner only) ----------
@@ -209,7 +238,8 @@ r.patch("/:id", requireAuth, async (req: AuthedRequest, res) => {
 
   const circle = await Circle.findById(idCheck.data);
   if (!circle) return res.status(404).json({ error: "Circle not found" });
-  if (String(circle.createdBy) !== req.user!.id) return res.status(403).json({ error: "Only the owner can modify this circle" });
+  if (String(circle.createdBy) !== req.user!.id)
+    return res.status(403).json({ error: "Only the owner can modify this circle" });
 
   const updates: any = {};
   const ops: any = {};
@@ -223,15 +253,13 @@ r.patch("/:id", requireAuth, async (req: AuthedRequest, res) => {
   }
 
   if (parsed.data.removeMembers?.length) {
-    const toRemove = parsed.data.removeMembers.filter(m => m !== String(circle.createdBy));
+    const toRemove = parsed.data.removeMembers.filter((m) => m !== String(circle.createdBy));
     if (toRemove.length) ops.$pullAll = { ...(ops.$pullAll || {}), members: toRemove };
   }
 
-  // If switching to private and there's no invite code yet, create one
   if (parsed.data.visibility === "private" && !circle.inviteCode) {
-    updates.inviteCode = crypto.randomBytes(8).toString("hex");
+    updates.inviteCode = await createUniqueInviteCode();
   }
-  // If switching to public, remove invite code
   if (parsed.data.visibility === "public") {
     ops.$unset = { ...(ops.$unset || {}), inviteCode: "" };
   }
@@ -239,8 +267,8 @@ r.patch("/:id", requireAuth, async (req: AuthedRequest, res) => {
   const updated = await Circle.findByIdAndUpdate(
     circle._id,
     Object.keys(ops).length ? { ...updates, ...ops } : updates,
-    { new: true, runValidators: true, select: "_id name description visibility createdBy members createdAt updatedAt" }
-  ).lean();
+    { new: true, runValidators: true, select: "name description visibility createdBy members createdAt updatedAt" }
+  ).lean({ virtuals: true });
 
   res.json(updated);
 });
@@ -250,9 +278,10 @@ r.delete("/:id", requireAuth, async (req: AuthedRequest, res) => {
   const idCheck = objectId.safeParse(req.params.id);
   if (!idCheck.success) return res.status(400).json({ error: "Invalid id" });
 
-  const circle = await Circle.findById(idCheck.data).select("_id createdBy").lean();
+  const circle = await Circle.findById(idCheck.data).select("createdBy").lean();
   if (!circle) return res.status(404).json({ error: "Circle not found" });
-  if (String(circle.createdBy) !== req.user!.id) return res.status(403).json({ error: "Only the owner can delete this circle" });
+  if (String(circle.createdBy) !== req.user!.id)
+    return res.status(403).json({ error: "Only the owner can delete this circle" });
 
   await Circle.findByIdAndDelete(circle._id);
   res.json({ ok: true });
