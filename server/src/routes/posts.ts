@@ -4,7 +4,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { Types } from "mongoose";
 import Post from "../models/Post";
-import Circle from "../models/Circle";
+import Circle from "../models/Circles/Circle";
 import { requireAuth, AuthedRequest } from "../middleware/auth";
 import { validateBody, validateQuery, validateParams } from "../middleware/validate";
 import { asyncHandler } from "../middleware/asyncHandler";
