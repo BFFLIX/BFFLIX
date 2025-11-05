@@ -36,6 +36,12 @@ class TMDBService {
   private imageBaseURL: string;
   private client: AxiosInstance;
 
+  // tiny in-memory caches for genres (24h)
+  private genresCache: {
+    movie?: { ts: number; map: Record<string, number> };
+    tv?: { ts: number; map: Record<string, number> };
+  } = {};
+
   constructor() {
     this.apiKey = process.env.TMDB_API_KEY || '';
     this.baseURL = process.env.TMDB_BASE_URL || 'https://api.themoviedb.org/3';
@@ -162,6 +168,82 @@ class TMDBService {
       console.error('Error fetching providers:', error.message);
       throw error;
     }
+  }
+
+  /** Get a map from lowercased genre name -> TMDB id, with a short in-memory cache */
+  private async getGenreMap(kind: 'movie' | 'tv'): Promise<Record<string, number>> {
+    const now = Date.now();
+    const cached = this.genresCache[kind];
+    // 24h cache
+    if (cached && now - cached.ts < 24 * 60 * 60 * 1000) return cached.map;
+
+    const endpoint = kind === 'movie' ? '/genre/movie/list' : '/genre/tv/list';
+    const resp = await this.client.get(endpoint, { params: { language: 'en-US' } });
+    const list: Array<{ id: number; name: string }> = resp.data?.genres || [];
+    const map: Record<string, number> = {};
+    for (const g of list) map[g.name.trim().toLowerCase()] = g.id;
+
+    this.genresCache[kind] = { ts: now, map };
+    return map;
+  }
+
+  /** Convert common genre phrases into a TMDB genre id if possible */
+  async resolveGenreId(kind: 'movie' | 'tv', rawName: string): Promise<number | null> {
+    const map = await this.getGenreMap(kind);
+    const n = rawName.trim().toLowerCase();
+
+    // simple normalization/aliases
+    const aliases: Record<string, string> = {
+      'sci fi': 'science fiction',
+      'sci-fi': 'science fiction',
+      'rom com': 'romance',
+      'rom-com': 'romance',
+      thriller: 'thriller',
+      comedy: 'comedy',
+      drama: 'drama',
+      action: 'action',
+      horror: 'horror',
+      animation: 'animation',
+      adventure: 'adventure',
+      fantasy: 'fantasy',
+      mystery: 'mystery',
+      crime: 'crime',
+      documentary: 'documentary',
+      western: 'western',
+      'science fiction': 'science fiction',
+      family: 'family',
+      war: 'war',
+      history: 'history',
+      music: 'music',
+      romance: 'romance',
+      reality: 'reality',
+    };
+
+    const canonical = aliases[n] || n;
+    return map[canonical] ?? null;
+  }
+
+  /** TMDB trending (movie|tv) (day|week) */
+  async getTrending(kind: 'movie' | 'tv', window: 'day' | 'week' = 'day'): Promise<TMDBResponse<any>> {
+    const resp = await this.client.get(`/trending/${kind}/${window}`, {
+      params: { language: 'en-US' },
+    });
+    return resp.data;
+  }
+
+  /** Discover by genre id, sorted by popularity desc */
+  async discoverByGenre(kind: 'movie' | 'tv', genreId: number, page = 1): Promise<TMDBResponse<any>> {
+    const path = kind === 'movie' ? '/discover/movie' : '/discover/tv';
+    const resp = await this.client.get(path, {
+      params: {
+        with_genres: String(genreId),
+        sort_by: 'popularity.desc',
+        watch_region: 'US',
+        language: 'en-US',
+        page,
+      },
+    });
+    return resp.data;
   }
 }
 
