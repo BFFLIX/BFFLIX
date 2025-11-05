@@ -23,8 +23,11 @@ import feedRouter from "./routes/feed";
 
 const app = express();
 
+app.set("trust proxy", 1);
+
 // Security + platform defaults
 app.use(helmet());
+app.disable("x-powered-by");
 app.use(cors({ origin: env.CORS_ORIGIN, credentials: true }));
 app.use(express.json({ limit: "1mb" }));
 // Public endpoints first (should work even if DB is down)
