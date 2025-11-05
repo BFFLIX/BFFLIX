@@ -4,9 +4,10 @@ import { z } from "zod";
 import { Types } from "mongoose";
 import crypto from "crypto";
 import Circle from "../models/Circles/Circle";
+
 import User from "../models/user";
 import { requireAuth, AuthedRequest } from "../middleware/auth";
-
+import CircleInvitation from "../models/Circles/CircleInvitation";
 const r = Router();
 
 // Reusable validators
@@ -16,6 +17,25 @@ const paged = z.object({
   page: z.coerce.number().min(1).default(1),
   limit: z.coerce.number().min(1).max(50).default(20),
 });
+
+//Moderator Validators (isOwner/isMod/isBoth)
+async function isOwner(circleId: string, userId: string): Promise<boolean> {
+  const circle = await Circle.findById(circleId).select("createdBy").lean();
+  return circle ? circle.createdBy.toString() === userId : false;
+}
+
+async function isModerator(circleId: string, userId: string): Promise<boolean> {
+  const circle = await Circle.findById(circleId).select("moderators").lean();
+  if (!circle) return false;
+  return circle.moderators?.some(mod => mod.toString() === userId) ?? false;
+}
+
+async function isOwnerOrMod(circleId: string, userId: string): Promise<boolean> {
+  const circle = await Circle.findById(circleId).select("createdBy moderators").lean();
+  if (!circle) return false;
+  if (circle.createdBy.toString() === userId) return true;
+  return circle.moderators?.some(mod => mod.toString() === userId) ?? false;
+}
 
 // ---------- Create a circle (private by default) ----------
 const createSchema = z.object({
@@ -286,5 +306,333 @@ r.delete("/:id", requireAuth, async (req: AuthedRequest, res) => {
   await Circle.findByIdAndDelete(circle._id);
   res.json({ ok: true });
 });
+
+// ==================== INVITATIONS ====================
+
+// ---------- Send invitation ----------
+const inviteSchema = z.object({
+  userId: objectId,
+});
+
+r.post("/:id/invite", requireAuth, async (req: AuthedRequest, res) => {
+  const idCheck = objectId.safeParse(req.params.id);
+  if (!idCheck.success) return res.status(400).json({ error: "Invalid circle id" });
+
+  if (!await isOwnerOrMod(idCheck.data, req.user!.id)) {
+    return res.status(403).json({ error: "Only owner or moderators can send invitations" });
+  }
+
+  const parsed = inviteSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json(parsed.error.format());
+
+  const circle = await Circle.findById(idCheck.data);
+  if (!circle) return res.status(404).json({ error: "Circle not found" });
+
+  const user = await User.findById(parsed.data.userId);
+  if (!user) return res.status(404).json({ error: "User not found" });
+
+  if (circle.members.some(m => m.toString() === parsed.data.userId)) {
+    return res.status(400).json({ error: "User is already a member" });
+  }
+
+  const existingInvite = await CircleInvitation.findOne({
+    circleId: idCheck.data,
+    inviteeId: parsed.data.userId,
+    status: "pending",
+  });
+
+  if (existingInvite) {
+    return res.status(400).json({ error: "Pending invitation already exists" });
+  }
+
+  const invitation = await CircleInvitation.create({
+    circleId: idCheck.data,
+    inviteeId: parsed.data.userId,
+    invitedBy: req.user!.id,
+    status: "pending",
+  });
+
+  res.status(201).json({ 
+    message: "Invitation sent successfully",
+    invitationId: invitation.id 
+  });
+});
+
+// ---------- Accept invitation ----------
+r.post("/:id/invite/accept", requireAuth, async (req: AuthedRequest, res) => {
+  const idCheck = objectId.safeParse(req.params.id);
+  if (!idCheck.success) return res.status(400).json({ error: "Invalid circle id" });
+
+  const invitation = await CircleInvitation.findOne({
+    circleId: idCheck.data,
+    inviteeId: req.user!.id,
+    status: "pending",
+  });
+
+  if (!invitation) {
+    return res.status(404).json({ error: "No pending invitation found" });
+  }
+
+  if (invitation.expiresAt && invitation.expiresAt < new Date()) {
+    invitation.status = "declined";
+    await invitation.save();
+    return res.status(400).json({ error: "Invitation has expired" });
+  }
+
+  const circle = await Circle.findById(idCheck.data);
+  if (!circle) {
+    return res.status(404).json({ error: "Circle not found" });
+  }
+
+  if (!circle.members.some(m => m.toString() === req.user!.id)) {
+    circle.members.push(new Types.ObjectId(req.user!.id));
+    await circle.save();
+  }
+
+  invitation.status = "accepted";
+  await invitation.save();
+
+  res.json({ message: "Invitation accepted successfully" });
+});
+
+// ---------- Decline invitation ----------
+r.post("/:id/invite/decline", requireAuth, async (req: AuthedRequest, res) => {
+  const idCheck = objectId.safeParse(req.params.id);
+  if (!idCheck.success) return res.status(400).json({ error: "Invalid circle id" });
+
+  const invitation = await CircleInvitation.findOne({
+    circleId: idCheck.data,
+    inviteeId: req.user!.id,
+    status: "pending",
+  });
+
+  if (!invitation) {
+    return res.status(404).json({ error: "No pending invitation found" });
+  }
+
+  invitation.status = "declined";
+  await invitation.save();
+
+  res.json({ message: "Told them you hate them..." });
+});
+
+// ---------- List pending invitations (for circle owner/mod) ----------
+r.get("/:id/invitations", requireAuth, async (req: AuthedRequest, res) => {
+  const idCheck = objectId.safeParse(req.params.id);
+  if (!idCheck.success) return res.status(400).json({ error: "Invalid circle id" });
+
+  if (!await isOwnerOrMod(idCheck.data, req.user!.id)) {
+    return res.status(403).json({ error: "Only owner or moderators can view invitations" });
+  }
+
+  const qp = paged.safeParse(req.query);
+  if (!qp.success) return res.status(400).json(qp.error.format());
+  const { page, limit } = qp.data;
+
+  const statusFilter = req.query.status as string;
+  const filter: any = { circleId: idCheck.data };
+  
+  if (statusFilter && ["pending", "accepted", "declined"].includes(statusFilter)) {
+    filter.status = statusFilter;
+  } else {
+    filter.status = "pending";
+  }
+
+  const invitations = await CircleInvitation.find(filter)
+    .populate("inviteeId", "name email")
+    .populate("invitedBy", "name email")
+    .sort({ createdAt: -1 })
+    .skip((page - 1) * limit)
+    .limit(limit)
+    .lean();
+
+  const total = await CircleInvitation.countDocuments(filter);
+
+  res.json({ 
+    page, 
+    limit, 
+    total,
+    items: invitations 
+  });
+});
+
+// ---------- Get my pending invitations ----------
+r.get("/invitations/me", requireAuth, async (req: AuthedRequest, res) => {
+  const qp = paged.safeParse(req.query);
+  if (!qp.success) return res.status(400).json(qp.error.format());
+  const { page, limit } = qp.data;
+
+  const invitations = await CircleInvitation.find({
+    inviteeId: req.user!.id,
+    status: "pending",
+    expiresAt: { $gt: new Date() },
+  })
+    .populate("circleId", "name description visibility")
+    .populate("invitedBy", "name email")
+    .sort({ createdAt: -1 })
+    .skip((page - 1) * limit)
+    .limit(limit)
+    .lean();
+
+  const total = await CircleInvitation.countDocuments({
+    inviteeId: req.user!.id,
+    status: "pending",
+    expiresAt: { $gt: new Date() },
+  });
+
+  res.json({ 
+    page, 
+    limit, 
+    total,
+    items: invitations 
+  });
+});
+
+// ==================== MEMBERS ====================
+
+// ---------- List circle members ----------
+r.get("/:id/members", requireAuth, async (req: AuthedRequest, res) => {
+  const idCheck = objectId.safeParse(req.params.id);
+  if (!idCheck.success) return res.status(400).json({ error: "Invalid circle id" });
+
+  const circle = await Circle.findOne({ 
+    _id: idCheck.data, 
+    members: req.user!.id 
+  }).lean();
+
+  if (!circle) {
+    return res.status(403).json({ error: "You must be a member to view members" });
+  }
+
+  const qp = paged.safeParse(req.query);
+  if (!qp.success) return res.status(400).json(qp.error.format());
+  const { page, limit } = qp.data;
+
+  const skip = (page - 1) * limit;
+  const memberIds = circle.members.slice(skip, skip + limit);
+
+  const members = await User.find({ _id: { $in: memberIds } })
+    .select("_id name email")
+    .lean();
+
+  const enrichedMembers = members.map(member => ({
+    ...member,
+    isOwner: circle.createdBy.toString() === member._id.toString(),
+    isModerator: circle.moderators?.some(mod => mod.toString() === member._id.toString()) ?? false,
+  }));
+
+  res.json({ 
+    page, 
+    limit, 
+    total: circle.members.length,
+    items: enrichedMembers 
+  });
+});
+
+// ---------- Remove member ----------
+r.delete("/:id/members/:userId", requireAuth, async (req: AuthedRequest, res) => {
+  const idCheck = objectId.safeParse(req.params.id);
+  const userIdCheck = objectId.safeParse(req.params.userId);
+  
+  if (!idCheck.success || !userIdCheck.success) {
+    return res.status(400).json({ error: "Invalid id" });
+  }
+
+  if (!await isOwnerOrMod(idCheck.data, req.user!.id)) {
+    return res.status(403).json({ error: "Only owner or moderators can remove members" });
+  }
+
+  const circle = await Circle.findById(idCheck.data);
+  if (!circle) return res.status(404).json({ error: "Circle not found" });
+
+  if (circle.createdBy.toString() === userIdCheck.data) {
+    return res.status(400).json({ error: "Cannot remove the circle owner" });
+  }
+
+  const isRequesterOwner = circle.createdBy.toString() === req.user!.id;
+  const isTargetModerator = circle.moderators?.some(mod => mod.toString() === userIdCheck.data) ?? false;
+
+  if (isTargetModerator && !isRequesterOwner) {
+    return res.status(403).json({ error: "Only the owner can remove moderators" });
+  }
+
+  const updated = await Circle.findByIdAndUpdate(
+    idCheck.data,
+    { 
+      $pull: { 
+        members: userIdCheck.data,
+        moderators: userIdCheck.data
+      } 
+    },
+    { new: true }
+  );
+
+  if (!updated) return res.status(404).json({ error: "Circle not found" });
+
+  res.json({ message: "Member removed successfully" });
+});
+
+// ==================== MODERATORS ====================
+
+// ---------- Add moderator ----------
+r.post("/:id/mods/:userId", requireAuth, async (req: AuthedRequest, res) => {
+  const idCheck = objectId.safeParse(req.params.id);
+  const userIdCheck = objectId.safeParse(req.params.userId);
+  
+  if (!idCheck.success || !userIdCheck.success) {
+    return res.status(400).json({ error: "Invalid id" });
+  }
+
+  if (!await isOwner(idCheck.data, req.user!.id)) {
+    return res.status(403).json({ error: "Only the owner can add moderators" });
+  }
+
+  const circle = await Circle.findById(idCheck.data);
+  if (!circle) return res.status(404).json({ error: "Circle not found" });
+
+  if (!circle.members.some(m => m.toString() === userIdCheck.data)) {
+    circle.members.push(new Types.ObjectId(userIdCheck.data));
+  }
+
+  if (circle.moderators?.some(mod => mod.toString() === userIdCheck.data)) {
+    return res.status(400).json({ error: "User is already a moderator" });
+  }
+
+  await Circle.findByIdAndUpdate(
+    idCheck.data,
+    { 
+      $addToSet: { 
+        moderators: userIdCheck.data,
+        members: userIdCheck.data
+      }
+    }
+  );
+
+  res.json({ message: "Moderator added successfully" });
+});
+
+// ---------- Remove moderator ----------
+r.delete("/:id/mods/:userId", requireAuth, async (req: AuthedRequest, res) => {
+  const idCheck = objectId.safeParse(req.params.id);
+  const userIdCheck = objectId.safeParse(req.params.userId);
+  
+  if (!idCheck.success || !userIdCheck.success) {
+    return res.status(400).json({ error: "Invalid id" });
+  }
+
+  if (!await isOwner(idCheck.data, req.user!.id)) {
+    return res.status(403).json({ error: "Only the owner can remove moderators" });
+  }
+
+  await Circle.findByIdAndUpdate(
+    idCheck.data,
+    { $pull: { moderators: userIdCheck.data } }
+  );
+
+  res.json({ message: "Moderator removed successfully" });
+});
+
+
+
 
 export default r;
