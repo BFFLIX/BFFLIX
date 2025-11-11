@@ -28,15 +28,35 @@ async function getTransporter() {
     throw new Error("SMTP transport not configured. Missing SMTP_HOST/SMTP_USER/SMTP_PASS.");
   }
 
-  transporter = nodemailer.createTransport({
-    host: SMTP_HOST,
-    port: Number(process.env.SMTP_PORT ?? 587),
-    secure: String(process.env.SMTP_SECURE || "").toLowerCase() === "true",
-    auth: { user: SMTP_USER, pass: SMTP_PASS },
-    pool: true,               // enable connection pooling
-    maxConnections: 5,        // tweak as needed
-    maxMessages: 100,         // tweak as needed
-  });
+  if (Number(process.env.SMTP_PORT ?? 587) === 587) {
+    transporter = nodemailer.createTransport({
+      host: SMTP_HOST,
+      port: 587, // explicitly use STARTTLS port
+      secure: false, // port 587 uses STARTTLS, not SSL
+      requireTLS: true, // enforce TLS upgrade
+      auth: { user: SMTP_USER, pass: SMTP_PASS },
+      tls: {
+        minVersion: "TLSv1.2",
+        rejectUnauthorized: true,
+      },
+      pool: true,
+      maxConnections: 5,
+      maxMessages: 100,
+      connectionTimeout: 15000, // 15s
+      greetingTimeout: 10000,
+      socketTimeout: 20000,
+    });
+  } else {
+    transporter = nodemailer.createTransport({
+      host: SMTP_HOST,
+      port: Number(process.env.SMTP_PORT ?? 587),
+      secure: String(process.env.SMTP_SECURE || "").toLowerCase() === "true",
+      auth: { user: SMTP_USER, pass: SMTP_PASS },
+      pool: true,               // enable connection pooling
+      maxConnections: 5,        // tweak as needed
+      maxMessages: 100,         // tweak as needed
+    });
+  }
 
   return transporter;
 }
