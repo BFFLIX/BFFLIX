@@ -20,6 +20,7 @@ import agentRouter from "./routes/agent";
 import viewingsRouter from "./routes/viewings";
 import tmdbRouter from "./routes/tmdb.routes";
 import feedRouter from "./routes/feed";
+import engagementRouter from "./routes/engagement";
 
 const app = express();
 
@@ -60,6 +61,7 @@ app.use("/agent", agentRouter);
 app.use("/viewings", viewingsRouter);
 app.use("/tmdb", tmdbRouter);
 app.use("/feed", feedRouter);
+app.use("/", engagementRouter);
 
 // Global error handler
 app.use((
