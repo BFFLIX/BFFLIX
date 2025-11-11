@@ -8,6 +8,7 @@ type SendOpts = {
   html?: string;
   text?: string;
   headers?: Record<string, string>;
+  replyTo?: string;
 };
 
 let transporter: nodemailer.Transporter | null = null;
@@ -22,18 +23,19 @@ async function getTransporter() {
   if (transporter) return transporter;
 
   // Strict: require SMTP in all environments
-  if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) {
+  const { SMTP_HOST, SMTP_USER, SMTP_PASS } = process.env;
+  if (!SMTP_HOST || !SMTP_USER || !SMTP_PASS) {
     throw new Error("SMTP transport not configured. Missing SMTP_HOST/SMTP_USER/SMTP_PASS.");
   }
 
   transporter = nodemailer.createTransport({
-    host: process.env.SMTP_HOST!,
+    host: SMTP_HOST,
     port: Number(process.env.SMTP_PORT ?? 587),
-    secure: String(process.env.SMTP_SECURE).toLowerCase() === "true",
-    auth: {
-      user: process.env.SMTP_USER!,
-      pass: process.env.SMTP_PASS!,
-    },
+    secure: String(process.env.SMTP_SECURE || "").toLowerCase() === "true",
+    auth: { user: SMTP_USER, pass: SMTP_PASS },
+    pool: true,               // enable connection pooling
+    maxConnections: 5,        // tweak as needed
+    maxMessages: 100,         // tweak as needed
   });
 
   return transporter;
@@ -50,17 +52,27 @@ function toText(html: string) {
     .trim();
 }
 
-/** Low-level sender (SMTP only). */
-export async function sendEmail({ to, subject, html, text, headers }: SendOpts) {
+/** Low-level sender (SMTP only). Automatically injects SES config-set header if present. */
+export async function sendEmail({ to, subject, html, text, headers, replyTo }: SendOpts) {
   const t = await getTransporter();
+
+  // Auto-add SES configuration set header so CloudWatch alarms work.
+  const confSet = process.env.SES_CONFIGURATION_SET; // e.g. "bfflix-prod"
+  const finalHeaders: Record<string, string> = {
+    ...(headers || {}),
+    ...(confSet ? { "X-SES-CONFIGURATION-SET": confSet } : {}),
+  };
+
   const info = await t.sendMail({
     from: fromAddress(),
     to,
     subject,
     html,
     text: text ?? (html ? toText(html) : undefined),
-    headers,
+    headers: finalHeaders,
+    ...(replyTo ? { replyTo } : {}),
   });
+
   return { messageId: info.messageId };
 }
 
