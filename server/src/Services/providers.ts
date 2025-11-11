@@ -1,5 +1,5 @@
 
-// server/src/services/providers.ts
+// server/src/Services/providers.ts
 import TitleCache from "../models/TitleCache";
 import tmdb from "../Services/tmdb.service";
 
