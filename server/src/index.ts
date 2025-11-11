@@ -61,7 +61,7 @@ app.use("/agent", agentRouter);
 app.use("/viewings", viewingsRouter);
 app.use("/tmdb", tmdbRouter);
 app.use("/feed", feedRouter);
-app.use("/", engagementRouter);
+app.use("/posts", engagementRouter);
 
 // Global error handler
 app.use((
