@@ -18,8 +18,8 @@ import { authLimiter } from "./middleware/rateLimit";
 import meRouter from "./routes/me";
 import agentRouter from "./routes/agent";
 import viewingsRouter from "./routes/viewings";
-import watchlistRouter from "./routes/watchlist.routes";
-import favoritesRouter from "./routes/favorites.routes";
+import watchlistRouter from "./routes/watchlistRoutes";
+import favoritesRouter from "./routes/favoritesRoutes";
 import tmdbRouter from "./routes/tmdb.routes";
 import feedRouter from "./routes/feed";
 
@@ -62,7 +62,6 @@ app.use("/agent", agentRouter);
 app.use("/viewings", viewingsRouter);
 app.use("/tmdb", tmdbRouter);
 app.use("/feed", feedRouter);
-//watchlistfavorite
 app.use("/api/watchlist", watchlistRouter);
 app.use("/api/favorites", favoritesRouter);
 
