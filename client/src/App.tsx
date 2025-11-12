@@ -9,7 +9,7 @@ export default function App() {
     <BrowserRouter>
       <AuthProvider>
         <Routes>
-          {/* Public Routes */}
+          {/* Auth Route */}
           <Route path="/auth" element={<Auth />} />
           
           {/* Protected Routes */}
@@ -22,11 +22,11 @@ export default function App() {
             }
           />
           
-          {/* Default redirect */}
-          <Route path="/" element={<Navigate to="/auth" replace />} />
+          {/* Default redirect to home, which will redirect to auth if not authenticated */}
+          <Route path="/" element={<Navigate to="/home" replace />} />
           
-          {/* 404 - Redirect to auth */}
-          <Route path="*" element={<Navigate to="/auth" replace />} />
+          {/* 404 - Redirect to home */}
+          <Route path="*" element={<Navigate to="/home" replace />} />
         </Routes>
       </AuthProvider>
     </BrowserRouter>

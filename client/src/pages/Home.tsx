@@ -16,7 +16,7 @@ export default function Home() {
           <div className="flex items-center gap-4">
             <div className="text-sm">
               <p className="text-white/60">Welcome back,</p>
-              <p className="text-white">{user?.firstName} {user?.lastName}</p>
+              <p className="text-white">{user?.name}</p>
             </div>
             
             <Button
