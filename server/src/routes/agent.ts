@@ -9,12 +9,27 @@ import UserStreamingService from "../models/UserStreamingService";
 import { askLLMJson } from "../lib/llm";
 import tmdb from "../Services/tmdb.service";
 import { getPlayableServicesForTitle } from "../Services/providers";
+import Post from "../models/Post";
+import Circle from "../models/Circles/Circle";
 
 const r = Router();
 
 const bodySchema = z.object({
   query: z.string().min(1, "Query is required"),
   limit: z.coerce.number().int().min(1).max(10).optional().default(5), // optional cap for UI
+  preferFeed: z.coerce.boolean().optional().default(false),            // feed vs AI ordering
+
+  // NEW: optional conversation context so the agent can handle follow-ups
+  conversationId: z.string().max(100).optional(),
+  history: z
+    .array(
+      z.object({
+        role: z.enum(["user", "assistant"]),
+        content: z.string().min(1).max(2000),
+      })
+    )
+    .max(15)
+    .optional(),
 });
 
 // Additional schema for natural-language smart search
@@ -22,6 +37,8 @@ const smartSchema = z.object({
   query: z.string().min(1, "Query is required"),
   kind: z.enum(["movie","tv"]).optional(),      // optional user hint
   limit: z.coerce.number().int().min(1).max(10).optional().default(5),
+  useFeedBias: z.coerce.boolean().optional().default(false), // optionally blend with pod/feed signal
+  preferFeed: z.coerce.boolean().optional().default(false),  // NEW
 });
 
 // Enrich a known TMDb pick (already has media_type/id)
@@ -74,6 +91,35 @@ function normalizeServiceName(name: string): ServiceCode | null {
 function intersect<T>(a: T[], b: T[]): T[] {
   const set = new Set(b);
   return a.filter((x) => set.has(x));
+}
+
+/**
+ * Top titles from the user's circles (recent activity), to bias AI suggestions.
+ * Looks at posts in the last 30 days, grouped by (tmdbId,type), sorted by count and avg rating.
+ */
+async function getFeedTopCandidates(userId: string, days = 30, max = 10): Promise<Array<{ tmdbId: string; type: "movie" | "tv" }>> {
+  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+
+  const circleIds = await Circle.find({ members: userId }).distinct("_id");
+
+  if (!circleIds.length) return [];
+
+  const agg = await Post.aggregate([
+    { $match: { circles: { $in: circleIds }, createdAt: { $gte: since } } },
+    {
+      $group: {
+        _id: { tmdbId: "$tmdbId", type: "$type" },
+        count: { $sum: 1 },
+        avgRating: { $avg: "$rating" },
+        lastAt: { $max: "$createdAt" },
+      },
+    },
+    { $sort: { count: -1, avgRating: -1, lastAt: -1 } },
+    { $limit: max },
+    { $project: { _id: 0, tmdbId: "$_id.tmdbId", type: "$_id.type" } },
+  ]);
+
+  return agg as Array<{ tmdbId: string; type: "movie" | "tv" }>;
 }
 
 /**
@@ -136,7 +182,7 @@ r.post("/smart-search", requireAuth, async (req: AuthedRequest, res) => {
     const parsed = smartSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json(parsed.error.format());
 
-    const { query, kind, limit } = parsed.data;
+    const { query, kind, limit, useFeedBias, preferFeed } = parsed.data;
     const userId = req.user!.id;
 
     // Get user's subscribed platforms (names) then normalize to enum
@@ -208,9 +254,88 @@ User query: "${query}"
     picks = picks.slice(0, limit);
 
     // Enrich with providers + playable flags
-    const enriched = (
+    let enriched = (
       await Promise.all(picks.map((p) => enrichFromTmdbPick(p, userServices).catch(() => null)))
     ).filter(Boolean);
+
+    // Optionally layer in feed-bias: boost items that are hot in user's circles and playable
+    if (useFeedBias) {
+      // 1) Fetch recent feed candidates (ids) from circles
+      const feedCandidates = await getFeedTopCandidates(userId, 30, limit * 2);
+      const feedKeySet = new Set(feedCandidates.map(fc => `${fc.type}:${fc.tmdbId}`));
+
+      // 2) Re-rank current TMDB picks by a simple score
+      //    Base: popularity; + big boost if in feed; + small boost if playable on user's services
+      const FEED_BOOST = preferFeed ? 10_000_000 : 1_000_000;
+      const PLAYABLE_BOOST = preferFeed ? 10_000 : 1_000;
+      const scored = (enriched as Array<any>).map(item => {
+        const key = `${item.type}:${item.tmdbId}`;
+        const inFeed = feedKeySet.has(key);
+        const score =
+          (typeof item.popularity === "number" ? item.popularity : 0) +
+          (inFeed ? FEED_BOOST : 0) +
+          (item.playableOnMyServices ? PLAYABLE_BOOST : 0);
+        return { item, score, key };
+      }).sort((a, b) => b.score - a.score);
+
+      let biased = scored.map(s => s.item);
+
+      // 3) If we still have room or no overlap, backfill with top feed items not already present
+      if (biased.length < limit) {
+        const present = new Set(scored.map(s => s.key));
+        const toAdd = feedCandidates.filter(fc => !present.has(`${fc.type}:${fc.tmdbId}`)).slice(0, limit * 2);
+        if (toAdd.length) {
+          const backfilled = (
+            await Promise.all(
+              toAdd.map(async fc => {
+                const providers = await getPlayableServicesForTitle(fc.type, fc.tmdbId, "US");
+                const playableOn = intersect(providers, userServices);
+                const details = fc.type === "movie"
+                  ? await tmdb.getMovieDetails(Number(fc.tmdbId)).catch(() => null)
+                  : await tmdb.getTVDetails(Number(fc.tmdbId)).catch(() => null);
+                if (!details) return null;
+                const poster = tmdb.getPosterURL(details.poster_path, "w500");
+                return {
+                  tmdbId: String(details.id),
+                  type: fc.type,
+                  title: fc.type === "movie" ? (details.title || details.name) : (details.name || details.title),
+                  year: (details.release_date || details.first_air_date || "").slice(0, 4) || null,
+                  overview: details.overview ?? null,
+                  poster,
+                  providers,
+                  playableOnMyServices: playableOn.length > 0,
+                  playableOn,
+                  popularity: details.popularity ?? null,
+                  voteAverage: details.vote_average ?? null,
+                };
+              })
+            )
+          ).filter(Boolean) as Array<any>;
+
+          // merge and dedupe with optional feed preference
+          const seenKeys = new Set(biased.map((it: any) => `${it.type}:${it.tmdbId}`));
+          const pushUnique = (arr: any[]) => {
+            for (const it of arr) {
+              const k = `${it.type}:${it.tmdbId}`;
+              if (seenKeys.has(k)) continue;
+              biased.push(it);
+              seenKeys.add(k);
+              if (biased.length >= limit) break;
+            }
+          };
+          if (preferFeed) {
+            // when preferring feed, insert backfilled feed items first
+            pushUnique(backfilled);
+          } else {
+            // default behavior: just append as before
+            pushUnique(backfilled);
+          }
+        }
+      }
+
+      // 4) Cap to limit
+      enriched = biased.slice(0, limit);
+    }
 
     return res.json({
       query,
@@ -230,18 +355,69 @@ r.post("/recommendations", requireAuth, async (req: AuthedRequest, res) => {
     const parsed = bodySchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json(parsed.error.format());
 
-    const { query, limit } = parsed.data;
+    const { query, limit, preferFeed, conversationId, history } = parsed.data;
     const userId = req.user!.id;
 
-    // 1) Check cache (now caching *enriched* results so UI is instant)
-    const cached = await RecommendationCache.findOne({ userId, query }).lean();
-    if (cached && cached.expiresAt > new Date()) {
+    // 0) Quick classifier: only handle movie/TV/streaming queries
+    const classifyPrompt = `
+    You are a classifier for the BFFlix assistant.
+
+    Determine if the user's latest message is about movies, TV shows, streaming, watchlists, recommendations, actors, genres, or where to watch something.
+    - If it is about those topics, return: { "isMedia": true }
+    - If it is clearly about something else (homework, coding, life advice, general chat, etc.), return: { "isMedia": false }
+
+    Return ONLY a JSON object.
+
+    User message: "${query}"
+    `.trim();
+
+    let isMedia = true;
+    try {
+      const classifyRaw = await askLLMJson(classifyPrompt);
+      if (
+        classifyRaw &&
+        typeof classifyRaw === "object" &&
+        Object.prototype.hasOwnProperty.call(classifyRaw, "isMedia") &&
+        typeof (classifyRaw as any).isMedia === "boolean"
+      ) {
+        isMedia = (classifyRaw as any).isMedia;
+      }
+    } catch (e) {
+      // If classifier fails, default to media = true so we don't block legit queries
+      isMedia = true;
+    }
+
+    if (!isMedia) {
       return res.json({
         query,
-        cached: true,
-        results: cached.results,
-        message: "Served from cache",
+        cached: false,
+        basedOn: 0,
+        platforms: [],
+        results: [
+          {
+            type: "conversation",
+            message:
+              "I’m your BFFlix assistant, so I can only help with movie and TV show discovery, recommendations, and availability. Try asking about films, series, or what to watch next.",
+          },
+        ],
       });
+    }
+    
+
+    const isStateless = !conversationId && !(history && history.length);
+
+    // 1) Check cache (now caching *enriched* results so UI is instant) — only for stateless calls
+    let cached: any = null;
+    if (isStateless) {
+      cached = await RecommendationCache.findOne({ userId, query }).lean();
+      if (cached && cached.expiresAt > new Date()) {
+        return res.json({
+          query,
+          cached: true,
+          results: cached.results,
+          message: "Served from cache",
+        });
+      }
     }
 
     // 2) Get recent viewings
@@ -308,51 +484,127 @@ Return JSON object:
       })
       .join("; ");
 
-    // 6) Compose LLM prompt with platforms + profile
+    // 6) Compose LLM prompt with platforms + profile + optional conversation history
+    const historyBlock =
+      history && history.length
+        ? `Prior conversation:\n${history
+            .map((m) =>
+              m.role === "user"
+                ? `User: ${m.content}`
+                : `Assistant: ${m.content}`
+            )
+            .join("\n")}\n\n`
+        : "";
+
     const llmPrompt = `
 You are the AI movie assistant for BFFlix.
 
 User platforms (prefer titles likely available here): ${platformNames.join(", ") || "none set"}.
 
 Recent viewing history (most recent first):
-${userProfile}
+${userProfile || "No recent titles recorded."}
 
-User query: "${query}"
+${historyBlock}User's latest message: "${query}"
 
-Generate 3 to 5 high quality personalized recommendations. Infer tone, genre, and runtime preferences from their ratings and comments. Return ONLY a JSON array with items like:
+Task:
+- Treat this as a continuation of the conversation above if history is present.
+- If the user says things like "I don't like those", "what about this movie?", "got anything lighter?", or "none of those work", you must ADAPT the recommendations based on the prior list and their feedback.
+- Do NOT just repeat the same list as before.
+- You may briefly reference previous suggestions (e.g., "Instead of X and Y, here are some alternatives...").
+
+Return ONLY a JSON array with items like:
 [
   { "title": "string", "type": "movie" | "tv", "reason": "string", "matchScore": number }
 ]
 `.trim();
+
+    // 6.1) Pull popular items from the user's circles to bias/merge with AI output
+    const feedCandidates = await getFeedTopCandidates(userId, 30, limit * 2);
 
     // 7) Call LLM and cap to limit
     const raw = await askLLMJson(llmPrompt);
     const llmArray = Array.isArray(raw) ? raw : [];
     const trimmed = llmArray.slice(0, limit);
 
-    // 8) Resolve to TMDb and enrich with providers + poster + playableOnMyServices
+    // Build arrays separately
+    const aiCandidates: Array<{ title: string; type?: "movie" | "tv"; reason?: string; matchScore?: number }> = [];
+    for (const it of trimmed) {
+      const payload: { title: string; type?: "movie" | "tv"; reason?: string; matchScore?: number } = {
+        title: String(it?.title || "")
+      };
+      if (it?.type === "tv" || it?.type === "movie") payload.type = it.type;
+      if (typeof it?.reason === "string") payload.reason = it.reason;
+      if (typeof it?.matchScore === "number") payload.matchScore = it.matchScore;
+      aiCandidates.push(payload);
+    }
+    const feedIdCandidates: Array<{ tmdbId: string; type: "movie" | "tv" }> =
+      feedCandidates.map(f => ({ tmdbId: f.tmdbId, type: f.type }));
+
+    // Order depends on preferFeed
+    const merged: Array<{ title?: string; type?: "movie" | "tv"; reason?: string; matchScore?: number; tmdbId?: string }> =
+      preferFeed ? [...feedIdCandidates, ...aiCandidates] : [...aiCandidates, ...feedIdCandidates];
+
+    // Enrich all candidates:
+    //  - If we have a title (AI), resolve via search and enrich
+    //  - If we already have tmdbId+type (feed), enrich directly without search
     const enriched = (
       await Promise.all(
-        trimmed.map((it: any) => {
-          const payload: { title: string; type?: "movie" | "tv"; reason?: string; matchScore?: number } = {
-            title: String(it?.title || "")
-          };
-          if (it?.type === "tv" || it?.type === "movie") {
-            payload.type = it.type;
+        merged.map(async (cand) => {
+          if (cand.tmdbId && cand.type) {
+            // direct enrich from known id/type
+            const providers = await getPlayableServicesForTitle(cand.type, cand.tmdbId, "US");
+            const playableOn = intersect(providers, userServices);
+            const details = cand.type === "movie"
+              ? await tmdb.getMovieDetails(Number(cand.tmdbId)).catch(() => null)
+              : await tmdb.getTVDetails(Number(cand.tmdbId)).catch(() => null);
+
+            if (!details) return null;
+
+            const poster = tmdb.getPosterURL(details.poster_path, "w500");
+            return {
+              tmdbId: String(details.id),
+              type: cand.type,
+              title: cand.type === "movie" ? (details.title || details.name) : (details.name || details.title),
+              year: (details.release_date || details.first_air_date || "").slice(0, 4) || null,
+              overview: details.overview ?? null,
+              poster,
+              providers,
+              playableOnMyServices: playableOn.length > 0,
+              playableOn,
+              reason: cand.reason ?? null,
+              matchScore: typeof cand.matchScore === "number" ? cand.matchScore : null,
+              popularity: details.popularity ?? null,
+              voteAverage: details.vote_average ?? null,
+            };
+          } else if (cand.title) {
+            const input = {
+              title: cand.title as string,
+              ...(cand.type ? { type: cand.type as "movie" | "tv" } : {}),
+              ...(typeof cand.reason === "string" ? { reason: cand.reason } : {}),
+              ...(typeof cand.matchScore === "number" ? { matchScore: cand.matchScore } : {}),
+            };
+            return resolveAndEnrich(input, userServices).catch(() => null);
           }
-          if (typeof it?.reason === "string") {
-            payload.reason = it.reason;
-          }
-          if (typeof it?.matchScore === "number") {
-            payload.matchScore = it.matchScore;
-          }
-          return resolveAndEnrich(payload, userServices).catch(() => null);
+          return null;
         })
       )
-    ).filter(Boolean);
+    ).filter(Boolean) as Array<any>;
+
+    // Deduplicate by (type, tmdbId) keeping the first occurrence (AI-priority, then feed)
+    const seen = new Set<string>();
+    const deduped: any[] = [];
+    for (const item of enriched) {
+      const key = `${item.type}:${item.tmdbId}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      deduped.push(item);
+    }
+
+    // Now cap to `limit` after merging
+    const finalResults = deduped.slice(0, limit);
 
     // If nothing could be resolved, return a friendly fallback
-    if (enriched.length === 0) {
+    if (finalResults.length === 0) {
       return res.json({
         query,
         cached: false,
@@ -364,24 +616,26 @@ Generate 3 to 5 high quality personalized recommendations. Infer tone, genre, an
       });
     }
 
-    // 9) Save enriched to cache for 6 hours
-    await RecommendationCache.findOneAndUpdate(
-      { userId, query },
-      {
-        userId,
-        query,
-        results: enriched,
-        expiresAt: new Date(Date.now() + 6 * 60 * 60 * 1000),
-      },
-      { upsert: true }
-    );
+    // 9) Save enriched to cache for 6 hours (only for stateless calls)
+    if (isStateless) {
+      await RecommendationCache.findOneAndUpdate(
+        { userId, query },
+        {
+          userId,
+          query,
+          results: finalResults,
+          expiresAt: new Date(Date.now() + 6 * 60 * 60 * 1000),
+        },
+        { upsert: true }
+      );
+    }
 
     res.json({
       query,
       cached: false,
       basedOn: recentViewings.length,
       platforms: platformNames,
-      results: enriched,
+      results: finalResults,
     });
   } catch (err) {
     console.error("Agent Error:", err);
