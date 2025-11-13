@@ -163,7 +163,7 @@ export default function Auth() {
       </div>
 
       {/* Main Content */}
-      <div className="relative z-10 w-full min-h-screen flex items-center justify-center px-6 py-8">
+      <div className="relative z-10 w-full min-h-screen flex items-center justify-center px-6 py-12">
         <div className="flex flex-col items-center w-full max-w-md gap-1 -mt-16">
           {/* Centered Logo */}
           <div>
