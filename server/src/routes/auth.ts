@@ -1,4 +1,3 @@
-
 // server/src/routes/auth.ts
 import { Router } from "express";
 import { z } from "zod";
@@ -7,7 +6,7 @@ import User from "../models/user";
 import PasswordReset from "../models/PasswordReset";
 import { signToken } from "../lib/jwt";
 import { generateToken, hashToken } from "../lib/resetToken";
-import { sendEmail } from "../lib/mailer";
+import { sendWelcomeEmail, sendPasswordResetEmail } from "../lib/mailer";
 import { validatePassword } from "../lib/password";
 
 const r = Router();
@@ -77,6 +76,11 @@ r.post("/signup", async (req, res) => {
     const user = await User.create({ email, name: name.trim(), passwordHash });
 
     const token = signToken(String(user._id), (user as any).tokenVersion ?? 0);
+
+    // Fire-and-forget welcome email (does not block signup)
+    sendWelcomeEmail(user.email, user.name).catch((e) =>
+      console.error("Welcome email failed:", e)
+    );
 
     return res
       .status(201)
@@ -184,17 +188,9 @@ r.post("/request-reset", async (req, res) => {
     const base = process.env.APP_BASE_URL || "http://localhost:5173";
     const resetUrl = `${base}/reset-password?token=${raw}`;
 
-    const subject = "Reset your BFFlix password";
-    const text = `Hi${user.name ? " " + user.name : ""}, reset link (30 min): ${resetUrl}`;
-    const html = `<p>Hi${user.name ? " " + user.name : ""},</p>
-                  <p>Click to reset (expires in 30 min):
-                  <a href="${resetUrl}">Reset Password</a></p>`;
-
+    // Send templated password reset email via SES
     try {
-      const { previewUrl } = await sendEmail({ to: user.email, subject, text, html });
-      if (previewUrl && process.env.NODE_ENV !== "production") {
-        console.log("🔗 Email preview:", previewUrl);
-      }
+      await sendPasswordResetEmail(user.email, resetUrl, user.name);
     } catch (e) {
       console.error("Password reset email failed:", e);
     }
