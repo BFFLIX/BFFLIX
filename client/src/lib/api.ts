@@ -11,6 +11,9 @@ const isDevelopmentMode = () => {
   }
 };
 
+// Mock mode - set to true to use mock authentication
+const MOCK_ENABLED = false; // Set to false when backend is ready
+
 // User type matching backend response
 export interface User {
   id: string;
@@ -65,6 +68,18 @@ export function clearToken(): void {
 
 // Login user
 export async function loginUser(email: string, password: string): Promise<AuthResponse> {
+  if (MOCK_ENABLED) {
+    // Mock login response
+    return {
+      user: {
+        id: '123',
+        email: 'user@example.com',
+        name: 'John Doe',
+      },
+      token: 'mock_token',
+    };
+  }
+
   try {
     const response = await fetch(`${API_BASE_URL}/auth/login`, {
       method: 'POST',
@@ -107,6 +122,18 @@ export async function signupUser(
   email: string,
   password: string
 ): Promise<AuthResponse> {
+  if (MOCK_ENABLED) {
+    // Mock signup response
+    return {
+      user: {
+        id: '123',
+        email: 'user@example.com',
+        name: 'John Doe',
+      },
+      token: 'mock_token',
+    };
+  }
+
   try {
     const response = await fetch(`${API_BASE_URL}/auth/signup`, {
       method: 'POST',
@@ -145,6 +172,11 @@ export async function signupUser(
 
 // Request password reset
 export async function requestPasswordReset(email: string): Promise<void> {
+  if (MOCK_ENABLED) {
+    // Mock password reset request
+    return;
+  }
+
   try {
     const response = await fetch(`${API_BASE_URL}/auth/request-reset`, {
       method: 'POST',
@@ -172,6 +204,11 @@ export async function requestPasswordReset(email: string): Promise<void> {
 
 // Reset password with token
 export async function resetPassword(token: string, newPassword: string): Promise<void> {
+  if (MOCK_ENABLED) {
+    // Mock password reset
+    return;
+  }
+
   try {
     const response = await fetch(`${API_BASE_URL}/auth/reset`, {
       method: 'POST',

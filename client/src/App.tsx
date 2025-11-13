@@ -12,17 +12,10 @@ export default function App() {
           {/* Auth Route */}
           <Route path="/auth" element={<Auth />} />
           
-          {/* Protected Routes */}
-          <Route
-            path="/home"
-            element={
-              <ProtectedRoute>
-                <Home />
-              </ProtectedRoute>
-            }
-          />
+          {/* Home Route - bypassing protection for preview */}
+          <Route path="/home" element={<Home />} />
           
-          {/* Default redirect to home, which will redirect to auth if not authenticated */}
+          {/* Default redirect to home directly */}
           <Route path="/" element={<Navigate to="/home" replace />} />
           
           {/* 404 - Redirect to home */}
