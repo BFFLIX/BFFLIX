@@ -17,7 +17,19 @@ const r = Router();
 const bodySchema = z.object({
   query: z.string().min(1, "Query is required"),
   limit: z.coerce.number().int().min(1).max(10).optional().default(5), // optional cap for UI
-  preferFeed: z.coerce.boolean().optional().default(false),            // NEW
+  preferFeed: z.coerce.boolean().optional().default(false),            // feed vs AI ordering
+
+  // NEW: optional conversation context so the agent can handle follow-ups
+  conversationId: z.string().max(100).optional(),
+  history: z
+    .array(
+      z.object({
+        role: z.enum(["user", "assistant"]),
+        content: z.string().min(1).max(2000),
+      })
+    )
+    .max(15)
+    .optional(),
 });
 
 // Additional schema for natural-language smart search
@@ -343,18 +355,69 @@ r.post("/recommendations", requireAuth, async (req: AuthedRequest, res) => {
     const parsed = bodySchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json(parsed.error.format());
 
-    const { query, limit, preferFeed } = parsed.data;
+    const { query, limit, preferFeed, conversationId, history } = parsed.data;
     const userId = req.user!.id;
 
-    // 1) Check cache (now caching *enriched* results so UI is instant)
-    const cached = await RecommendationCache.findOne({ userId, query }).lean();
-    if (cached && cached.expiresAt > new Date()) {
+    // 0) Quick classifier: only handle movie/TV/streaming queries
+    const classifyPrompt = `
+    You are a classifier for the BFFlix assistant.
+
+    Determine if the user's latest message is about movies, TV shows, streaming, watchlists, recommendations, actors, genres, or where to watch something.
+    - If it is about those topics, return: { "isMedia": true }
+    - If it is clearly about something else (homework, coding, life advice, general chat, etc.), return: { "isMedia": false }
+
+    Return ONLY a JSON object.
+
+    User message: "${query}"
+    `.trim();
+
+    let isMedia = true;
+    try {
+      const classifyRaw = await askLLMJson(classifyPrompt);
+      if (
+        classifyRaw &&
+        typeof classifyRaw === "object" &&
+        Object.prototype.hasOwnProperty.call(classifyRaw, "isMedia") &&
+        typeof (classifyRaw as any).isMedia === "boolean"
+      ) {
+        isMedia = (classifyRaw as any).isMedia;
+      }
+    } catch (e) {
+      // If classifier fails, default to media = true so we don't block legit queries
+      isMedia = true;
+    }
+
+    if (!isMedia) {
       return res.json({
         query,
-        cached: true,
-        results: cached.results,
-        message: "Served from cache",
+        cached: false,
+        basedOn: 0,
+        platforms: [],
+        results: [
+          {
+            type: "conversation",
+            message:
+              "I’m your BFFlix assistant, so I can only help with movie and TV show discovery, recommendations, and availability. Try asking about films, series, or what to watch next.",
+          },
+        ],
       });
+    }
+    
+
+    const isStateless = !conversationId && !(history && history.length);
+
+    // 1) Check cache (now caching *enriched* results so UI is instant) — only for stateless calls
+    let cached: any = null;
+    if (isStateless) {
+      cached = await RecommendationCache.findOne({ userId, query }).lean();
+      if (cached && cached.expiresAt > new Date()) {
+        return res.json({
+          query,
+          cached: true,
+          results: cached.results,
+          message: "Served from cache",
+        });
+      }
     }
 
     // 2) Get recent viewings
@@ -421,18 +484,35 @@ Return JSON object:
       })
       .join("; ");
 
-    // 6) Compose LLM prompt with platforms + profile
+    // 6) Compose LLM prompt with platforms + profile + optional conversation history
+    const historyBlock =
+      history && history.length
+        ? `Prior conversation:\n${history
+            .map((m) =>
+              m.role === "user"
+                ? `User: ${m.content}`
+                : `Assistant: ${m.content}`
+            )
+            .join("\n")}\n\n`
+        : "";
+
     const llmPrompt = `
 You are the AI movie assistant for BFFlix.
 
 User platforms (prefer titles likely available here): ${platformNames.join(", ") || "none set"}.
 
 Recent viewing history (most recent first):
-${userProfile}
+${userProfile || "No recent titles recorded."}
 
-User query: "${query}"
+${historyBlock}User's latest message: "${query}"
 
-Generate 3 to 5 high quality personalized recommendations. Infer tone, genre, and runtime preferences from their ratings and comments. Return ONLY a JSON array with items like:
+Task:
+- Treat this as a continuation of the conversation above if history is present.
+- If the user says things like "I don't like those", "what about this movie?", "got anything lighter?", or "none of those work", you must ADAPT the recommendations based on the prior list and their feedback.
+- Do NOT just repeat the same list as before.
+- You may briefly reference previous suggestions (e.g., "Instead of X and Y, here are some alternatives...").
+
+Return ONLY a JSON array with items like:
 [
   { "title": "string", "type": "movie" | "tv", "reason": "string", "matchScore": number }
 ]
@@ -536,17 +616,19 @@ Generate 3 to 5 high quality personalized recommendations. Infer tone, genre, an
       });
     }
 
-    // 9) Save enriched to cache for 6 hours
-    await RecommendationCache.findOneAndUpdate(
-      { userId, query },
-      {
-        userId,
-        query,
-        results: finalResults,
-        expiresAt: new Date(Date.now() + 6 * 60 * 60 * 1000),
-      },
-      { upsert: true }
-    );
+    // 9) Save enriched to cache for 6 hours (only for stateless calls)
+    if (isStateless) {
+      await RecommendationCache.findOneAndUpdate(
+        { userId, query },
+        {
+          userId,
+          query,
+          results: finalResults,
+          expiresAt: new Date(Date.now() + 6 * 60 * 60 * 1000),
+        },
+        { upsert: true }
+      );
+    }
 
     res.json({
       query,
