@@ -118,8 +118,8 @@ export default function AuthPage() {
       // You can store this token in a global auth store later:
       // localStorage.setItem("bfflix_token", data.token);
       console.log("Login success:", data);
-
-      // TODO: redirect to home/dashboard
+      // Redirect to the main app/home dashboard after successful login
+      window.location.href = "/home";
     } catch (err: any) {
       console.error(err);
       setErrorMsg(err.message || "Login failed. Please try again.");
