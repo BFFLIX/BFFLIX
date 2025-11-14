@@ -1,6 +1,6 @@
 // API configuration
 const API_BASE_URL = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_URL) 
-  || 'https://bfflix.com';
+  || 'https://bfflix.onrender.com';
 
 // Check if we're in a development/preview environment without backend access
 const isDevelopmentMode = () => {
