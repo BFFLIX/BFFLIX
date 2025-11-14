@@ -40,10 +40,6 @@ export default function AuthPage() {
   const [isPrivacyModalOpen, setIsPrivacyModalOpen] = useState(false);
   const [isTermsModalOpen, setIsTermsModalOpen] = useState(false);
 
-  const [passwordStrengthLabel, setPasswordStrengthLabel] = useState<string | null>(null);
-  const [passwordStrengthScore, setPasswordStrengthScore] = useState<number | null>(null);
-  const [passwordStrengthChecking, setPasswordStrengthChecking] = useState(false);
-  const [passwordStrengthError, setPasswordStrengthError] = useState<string | null>(null);
 
   // Helper to pull a nice message from your error shapes
   const extractErrorMessage = async (res: Response) => {
@@ -226,74 +222,6 @@ export default function AuthPage() {
     }
   };
 
-  useEffect(() => {
-    setPasswordStrengthError(null);
-
-    if (!signupPassword) {
-      setPasswordStrengthLabel(null);
-      setPasswordStrengthScore(null);
-      setPasswordStrengthChecking(false);
-      return;
-    }
-
-    let cancelled = false;
-    setPasswordStrengthChecking(true);
-
-    const timer = setTimeout(async () => {
-      try {
-        const res = await fetch(
-          `${API_BASE_URL}/auth/password-strength?mode=stronger`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ password: signupPassword }),
-          }
-        );
-
-        if (!res.ok) {
-          const msg = await extractErrorMessage(res);
-          if (!cancelled) {
-            setPasswordStrengthError(msg);
-            setPasswordStrengthLabel(null);
-            setPasswordStrengthScore(null);
-          }
-          return;
-        }
-
-        const data = await res.json();
-        if (cancelled) return;
-
-        const label =
-          typeof data.label === "string"
-            ? data.label
-            : typeof data.score === "number" && data.score >= 3
-            ? "Strong"
-            : typeof data.score === "number" && data.score === 2
-            ? "Medium"
-            : "Weak";
-
-        setPasswordStrengthLabel(label);
-        setPasswordStrengthScore(
-          typeof data.score === "number" ? data.score : null
-        );
-      } catch (err) {
-        if (!cancelled) {
-          setPasswordStrengthError("Could not check password strength.");
-          setPasswordStrengthLabel(null);
-          setPasswordStrengthScore(null);
-        }
-      } finally {
-        if (!cancelled) {
-          setPasswordStrengthChecking(false);
-        }
-      }
-    }, 400);
-
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [signupPassword]);
 
   // --- render ---
 
@@ -483,37 +411,6 @@ export default function AuthPage() {
                 />
               </div>
 
-              <div className="auth-password-strength">
-                {passwordStrengthChecking && (
-                  <span className="auth-password-strength-text">
-                    Checking password strength...
-                  </span>
-                )}
-
-                {!passwordStrengthChecking && passwordStrengthError && (
-                  <span className="auth-password-strength-text auth-password-strength-text--weak">
-                    {passwordStrengthError}
-                  </span>
-                )}
-
-                {!passwordStrengthChecking &&
-                  !passwordStrengthError &&
-                  passwordStrengthLabel && (
-                    <span
-                      className={
-                        "auth-password-strength-text " +
-                        (passwordStrengthLabel.toLowerCase().includes("weak")
-                          ? "auth-password-strength-text--weak"
-                          : passwordStrengthLabel.toLowerCase().includes("medium") ||
-                            passwordStrengthLabel.toLowerCase().includes("fair")
-                          ? "auth-password-strength-text--medium"
-                          : "auth-password-strength-text--strong")
-                      }
-                    >
-                      Password strength: {passwordStrengthLabel}
-                    </span>
-                  )}
-              </div>
 
               <div className="auth-field">
                 <label
