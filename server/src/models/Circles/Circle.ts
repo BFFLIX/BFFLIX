@@ -11,8 +11,6 @@ const circleSchema = new Schema(
 
     createdBy: { type: Schema.Types.ObjectId, ref: "User", required: true },
     members: [{ type: Schema.Types.ObjectId, ref: "User", required: true }],
-    //NEW: add Moderator field to Circle documentation
-    moderators: [{ type: Schema.Types.ObjectId, ref: "User" }],
 
     // NEW: optional invite code for private circles (null for public)
     inviteCode: { type: String, trim: true },
@@ -64,7 +62,6 @@ circleSchema.index({ members: 1 });                       // "my circles"
 circleSchema.index({ createdBy: 1 });                     // owner queries
 circleSchema.index({ visibility: 1, name: 1 });           // discover public circles
 circleSchema.index({ inviteCode: 1 }, { sparse: true, unique: true }); // lookup by invite code (optional)
-circleSchema.index({ moderators: 1 });                    //Moderator
 
 // Virtual id + toJSON shaping (clients get `id`, not `_id`)
 circleSchema.virtual("id").get(function (this: { _id: Types.ObjectId }) {
