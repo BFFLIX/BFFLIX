@@ -22,6 +22,7 @@ import watchlistRouter from "./routes/watchlistRoutes";
 import favoritesRouter from "./routes/favoritesRoutes";
 import tmdbRouter from "./routes/tmdb.routes";
 import feedRouter from "./routes/feed";
+import engagementRouter from "./routes/engagement";
 
 const app = express();
 
@@ -64,6 +65,7 @@ app.use("/tmdb", tmdbRouter);
 app.use("/feed", feedRouter);
 app.use("/api/watchlist", watchlistRouter);
 app.use("/api/favorites", favoritesRouter);
+app.use("/posts", engagementRouter);
 
 // Global error handler
 app.use((
