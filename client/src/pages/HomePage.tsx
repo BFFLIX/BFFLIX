@@ -1,10 +1,9 @@
 
 // src/pages/HomePage.tsx
-import React, { useEffect, useState } from "react";
-import axios from "axios";
-
-const API_BASE =
-  import.meta.env.VITE_API_BASE_URL || "http://localhost:8080";
+import React, { useEffect, useState, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
+import bfflixLogo from "../assets/bfflix-logo.svg";
+import { apiGet, apiPost } from "../lib/api";
 
 // ----------------- Types -----------------
 
@@ -14,7 +13,13 @@ type Circle = {
   memberCount: number;
 };
 
-type ServiceTag = "Netflix" | "Hulu" | "Prime Video" | "Disney+" | "Max" | "Apple TV+";
+type ServiceTag =
+  | "Netflix"
+  | "Hulu"
+  | "Prime Video"
+  | "Disney+"
+  | "Max"
+  | "Apple TV+";
 
 type FeedPost = {
   _id: string;
@@ -25,7 +30,7 @@ type FeedPost = {
   title: string;
   year?: number;
   type: "Movie" | "Show";
-  rating: number; // 0 - 5
+  rating: number;
   body: string;
   services: ServiceTag[];
   likeCount: number;
@@ -45,13 +50,30 @@ type RecentViewing = {
   posterUrl?: string;
 };
 
+// TMDB search result (simplified)
+type TmdbSearchResult = {
+  id: number;
+  media_type: string;
+  title?: string;
+  name?: string;
+  poster_path?: string;
+  release_date?: string;
+  first_air_date?: string;
+};
+
+type SelectedTitle = {
+  id: number;
+  label: string;
+};
+
 // ----------------- Component -----------------
 
 const HomePage: React.FC = () => {
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<"all" | "circles" | "mine">("all");
-  const [activeService, setActiveService] = useState<ServiceTag | "All services">(
-    "All services"
-  );
+  const [activeService, setActiveService] = useState<
+    ServiceTag | "All services"
+  >("All services");
   const [sortOrder, setSortOrder] = useState<"newest" | "top">("newest");
 
   const [posts, setPosts] = useState<FeedPost[]>([]);
@@ -59,49 +81,72 @@ const HomePage: React.FC = () => {
   const [aiSuggestions, setAiSuggestions] = useState<AiSuggestion[]>([]);
   const [recentViewings, setRecentViewings] = useState<RecentViewing[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // ----------------- Create Post state -----------------
+
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [createType, setCreateType] = useState<"movie" | "tv">("movie");
+
+  const [searchQuery, setSearchQuery] = useState("");
+  const [isSearching, setIsSearching] = useState(false);
+  const [searchResults, setSearchResults] = useState<SelectedTitle[]>([]);
+  const [selectedTitle, setSelectedTitle] = useState<SelectedTitle | null>(
+    null
+  );
+
+  const [rating, setRating] = useState(0);
+  const [comment, setComment] = useState("");
+  const [watchedAt, setWatchedAt] = useState(""); // YYYY-MM-DD from <input type="date">
+
+  const [seasonNumber, setSeasonNumber] = useState("");
+  const [episodeNumber, setEpisodeNumber] = useState("");
+
+  const [selectedCircleIds, setSelectedCircleIds] = useState<string[]>([]);
+  const [isSubmittingPost, setIsSubmittingPost] = useState(false);
+  const [postError, setPostError] = useState<string | null>(null);
 
   // ----------------- Data loading -----------------
 
-  useEffect(() => {
-    const fetchAll = async () => {
-      try {
-        setIsLoading(true);
+  const fetchAll = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      setError(null);
 
-        // Adjust these endpoints to match your backend
-        const [feedRes, circlesRes, aiRes, recentRes] = await Promise.all([
-          axios.get<FeedPost[]>(`${API_BASE}/feed`, {
-            params: {
-              scope: activeTab,          // "all" | "circles" | "mine"
-              service:
-                activeService === "All services" ? undefined : activeService,
-              sort: sortOrder            // "newest" | "top"
-            },
-            withCredentials: true,
-          }),
-          axios.get<Circle[]>(`${API_BASE}/circles/my`, {
-            withCredentials: true,
-          }),
-          axios.get<AiSuggestion[]>(`${API_BASE}/ai/suggestions`, {
-            withCredentials: true,
-          }),
-          axios.get<RecentViewing[]>(`${API_BASE}/viewings/recent`, {
-            withCredentials: true,
-          }),
-        ]);
+      const [feedData, circlesData, aiData, recentData] = await Promise.all([
+        apiGet<FeedPost[]>(
+          `/feed?scope=${encodeURIComponent(
+            activeTab
+          )}&sort=${encodeURIComponent(sortOrder)}${
+            activeService === "All services"
+              ? ""
+              : `&service=${encodeURIComponent(activeService)}`
+          }`
+        ),
+        apiGet<Circle[]>("/circles"),
+        apiGet<AiSuggestion[]>("/ai/suggestions"),
+        apiGet<RecentViewing[]>("/viewings/recent"),
+      ]);
 
-        setPosts(feedRes.data);
-        setCircles(circlesRes.data);
-        setAiSuggestions(aiRes.data);
-        setRecentViewings(recentRes.data);
-      } catch (err) {
-        console.error("Error loading home data", err);
-      } finally {
-        setIsLoading(false);
+      setPosts(feedData);
+      setCircles(circlesData);
+      setAiSuggestions(aiData);
+      setRecentViewings(recentData);
+    } catch (err) {
+      console.error("Error loading home data", err);
+      if (err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError("Failed to load your BFFlix feed. Please try again.");
       }
-    };
-
-    fetchAll();
+    } finally {
+      setIsLoading(false);
+    }
   }, [activeTab, activeService, sortOrder]);
+
+  useEffect(() => {
+    fetchAll();
+  }, [fetchAll]);
 
   // ----------------- Helpers -----------------
 
@@ -126,6 +171,143 @@ const HomePage: React.FC = () => {
     "Apple TV+",
   ];
 
+  const openCreateModal = () => {
+    setIsCreateOpen(true);
+    setCreateType("movie");
+    setSearchQuery("");
+    setSearchResults([]);
+    setSelectedTitle(null);
+    setRating(0);
+    setComment("");
+    setWatchedAt("");
+    setSeasonNumber("");
+    setEpisodeNumber("");
+    setSelectedCircleIds([]);
+    setPostError(null);
+  };
+
+  const closeCreateModal = () => {
+    setIsCreateOpen(false);
+  };
+
+  const toggleCircleSelection = (id: string) => {
+    setSelectedCircleIds((prev) =>
+      prev.includes(id) ? prev.filter((c) => c !== id) : [...prev, id]
+    );
+  };
+
+  const mapTmdbResultToTitle = (r: TmdbSearchResult): SelectedTitle => {
+    const name = r.title || r.name || "Untitled";
+    const yearSource = r.release_date || r.first_air_date || "";
+    const year = yearSource ? yearSource.slice(0, 4) : "";
+    const label = year ? `${name} (${year})` : name;
+    return { id: r.id, label };
+  };
+
+  // TMDB search effect (debounced)
+  useEffect(() => {
+    if (!isCreateOpen) return;
+    if (!searchQuery.trim()) {
+      setSearchResults([]);
+      return;
+    }
+
+    const handle = setTimeout(async () => {
+      try {
+        setIsSearching(true);
+        setPostError(null);
+
+        const trimmed = searchQuery.trim();
+        const data = await apiGet<any>(
+          `/tmdb/search?query=${encodeURIComponent(trimmed)}&page=1`
+        );
+
+        const results: TmdbSearchResult[] = data?.results || [];
+        const mapped = results
+          .filter(
+            (r) =>
+              r.media_type === "movie" ||
+              r.media_type === "tv" ||
+              r.media_type === "tv_show"
+          )
+          .slice(0, 8)
+          .map(mapTmdbResultToTitle);
+
+        setSearchResults(mapped);
+      } catch (err) {
+        console.error("TMDB search error", err);
+        setPostError("Failed to search TMDB. Please try again.");
+      } finally {
+        setIsSearching(false);
+      }
+    }, 400);
+
+    return () => clearTimeout(handle);
+  }, [searchQuery, isCreateOpen]);
+
+  const handleSelectTitle = (title: SelectedTitle) => {
+    setSelectedTitle(title);
+    setSearchQuery(title.label);
+    setSearchResults([]);
+  };
+
+  const handleSubmitPost = async () => {
+    if (!selectedTitle) {
+      setPostError("Please search and select a movie or show.");
+      return;
+    }
+    if (!selectedCircleIds.length) {
+      setPostError("Please select at least one circle.");
+      return;
+    }
+    if (!rating && !comment.trim()) {
+      setPostError("Please add a rating or a short comment.");
+      return;
+    }
+    if (createType === "tv" && episodeNumber && !seasonNumber) {
+      setPostError("Season number is required when an episode is specified.");
+      return;
+    }
+
+    try {
+      setIsSubmittingPost(true);
+      setPostError(null);
+
+      const payload: Record<string, any> = {
+        type: createType === "movie" ? "movie" : "tv",
+        tmdbId: String(selectedTitle.id),
+        circles: selectedCircleIds,
+      };
+
+      if (rating) payload.rating = rating;
+      if (comment.trim()) payload.comment = comment.trim();
+      if (watchedAt) {
+        // backend expects a Date; this is YYYY-MM-DD so it will parse fine
+        payload.watchedAt = watchedAt;
+      }
+      if (createType === "tv" && seasonNumber) {
+        payload.seasonNumber = Number(seasonNumber);
+      }
+      if (createType === "tv" && episodeNumber) {
+        payload.episodeNumber = Number(episodeNumber);
+      }
+
+      await apiPost("/posts", payload);
+
+      closeCreateModal();
+      await fetchAll();
+    } catch (err) {
+      console.error("Create post error", err);
+      if (err instanceof Error) {
+        setPostError(err.message);
+      } else {
+        setPostError("Failed to create post. Please try again.");
+      }
+    } finally {
+      setIsSubmittingPost(false);
+    }
+  };
+
   // ----------------- Render -----------------
 
   return (
@@ -133,14 +315,24 @@ const HomePage: React.FC = () => {
       <div className="app-main-layout">
         {/* Left sidebar */}
         <aside className="app-sidebar">
-          <div className="app-sidebar-logo">BFFLIX</div>
+          <div className="app-sidebar-brand">
+            <img
+              src={bfflixLogo}
+              alt="BFFLIX"
+              className="app-sidebar-logo-img"
+            />
+          </div>
 
           <nav className="app-sidebar-nav">
             <button className="app-nav-item app-nav-item--active">
               <span className="app-nav-icon">🏠</span>
               <span>Home</span>
             </button>
-            <button className="app-nav-item">
+            <button
+              className="app-nav-item"
+              type="button"
+              onClick={() => navigate("/circles")}
+            >
               <span className="app-nav-icon">👥</span>
               <span>Circles</span>
             </button>
@@ -148,8 +340,12 @@ const HomePage: React.FC = () => {
               <span className="app-nav-icon">🎬</span>
               <span>Viewings</span>
             </button>
-            <button className="app-nav-item">
-              <span className="app-nav-icon">🤖</span>
+            <button
+              className="app-nav-item"
+              type="button"
+              onClick={() => navigate("/assistant")}
+            >
+              <span className="app-nav-icon">✨</span>
               <span>AI Assistant</span>
             </button>
             <button className="app-nav-item">
@@ -200,7 +396,13 @@ const HomePage: React.FC = () => {
                 </button>
               </div>
 
-              <button className="feed-new-post-button">+ Post</button>
+              <button
+                className="feed-new-post-button"
+                type="button"
+                onClick={openCreateModal}
+              >
+                + Post
+              </button>
             </div>
 
             <div className="feed-filters-row">
@@ -235,112 +437,336 @@ const HomePage: React.FC = () => {
             </div>
           </header>
 
+          {isCreateOpen && (
+            <div className="create-post-backdrop">
+              <div className="create-post-card">
+                <header className="create-post-header">
+                  <div className="create-post-type-toggle">
+                    <button
+                      type="button"
+                      className={
+                        createType === "movie"
+                          ? "create-post-type-button create-post-type-button--active"
+                          : "create-post-type-button"
+                      }
+                      onClick={() => setCreateType("movie")}
+                    >
+                      Movie
+                    </button>
+                    <button
+                      type="button"
+                      className={
+                        createType === "tv"
+                          ? "create-post-type-button create-post-type-button--active"
+                          : "create-post-type-button"
+                      }
+                      onClick={() => setCreateType("tv")}
+                    >
+                      Show
+                    </button>
+                  </div>
+                  <button
+                    type="button"
+                    className="create-post-close"
+                    onClick={closeCreateModal}
+                  >
+                    ×
+                  </button>
+                </header>
+
+                <div className="create-post-body">
+                  <div className="create-post-field">
+                    <label className="create-post-label">
+                      Search for a {createType === "movie" ? "movie" : "show"}
+                    </label>
+                    <input
+                      type="text"
+                      className="create-post-input"
+                      placeholder={
+                        createType === "movie"
+                          ? "Search for a movie..."
+                          : "Search for a show..."
+                      }
+                      value={searchQuery}
+                      onChange={(e) => {
+                        setSearchQuery(e.target.value);
+                        setSelectedTitle(null);
+                      }}
+                    />
+                    {isSearching && (
+                      <div className="create-post-search-status">
+                        Searching TMDB...
+                      </div>
+                    )}
+                    {searchResults.length > 0 && (
+                      <ul className="create-post-search-results">
+                        {searchResults.map((r) => (
+                          <li key={r.id}>
+                            <button
+                              type="button"
+                              className="create-post-search-result"
+                              onClick={() => handleSelectTitle(r)}
+                            >
+                              {r.label}
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    {selectedTitle && (
+                      <div className="create-post-selected">
+                        Selected: {selectedTitle.label}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="create-post-field">
+                    <div className="create-post-rating-row">
+                      <span className="create-post-label">Rating:</span>
+                      <div className="create-post-stars">
+                        {Array.from({ length: 5 }).map((_, i) => (
+                          <button
+                            key={i}
+                            type="button"
+                            className={
+                              i < rating
+                                ? "feed-star feed-star--filled"
+                                : "feed-star"
+                            }
+                            onClick={() => setRating(i + 1)}
+                          >
+                            ★
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  {createType === "tv" && (
+                    <div className="create-post-row">
+                      <div className="create-post-field create-post-field-half">
+                        <label className="create-post-label">
+                          Season (optional)
+                        </label>
+                        <input
+                          type="number"
+                          min={1}
+                          className="create-post-input"
+                          value={seasonNumber}
+                          onChange={(e) => setSeasonNumber(e.target.value)}
+                        />
+                      </div>
+                      <div className="create-post-field create-post-field-half">
+                        <label className="create-post-label">
+                          Episode (optional)
+                        </label>
+                        <input
+                          type="number"
+                          min={1}
+                          className="create-post-input"
+                          value={episodeNumber}
+                          onChange={(e) => setEpisodeNumber(e.target.value)}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="create-post-field">
+                    <label className="create-post-label">
+                      Share your thoughts (optional)
+                    </label>
+                    <textarea
+                      className="create-post-textarea"
+                      maxLength={1000}
+                      placeholder="What did you think?"
+                      value={comment}
+                      onChange={(e) => setComment(e.target.value)}
+                    />
+                    <div className="create-post-char-counter">
+                      {comment.length}/1000
+                    </div>
+                  </div>
+
+                  <div className="create-post-field">
+                    <div className="create-post-watched-row">
+                      <span className="create-post-label">Watched on:</span>
+                      <input
+                        type="date"
+                        className="create-post-input"
+                        value={watchedAt}
+                        onChange={(e) => setWatchedAt(e.target.value)}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="create-post-field">
+                    <div className="create-post-circles-row">
+                      <span className="create-post-label">Post to circles:</span>
+                      <div className="create-post-circles">
+                        {circles.map((circle) => (
+                          <button
+                            key={circle._id}
+                            type="button"
+                            className={
+                              selectedCircleIds.includes(circle._id)
+                                ? "create-post-circle create-post-circle--active"
+                                : "create-post-circle"
+                            }
+                            onClick={() => toggleCircleSelection(circle._id)}
+                          >
+                            {circle.name}
+                          </button>
+                        ))}
+                        <button
+                          type="button"
+                          className="create-post-circle create-post-circle--add"
+                        >
+                          +
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {postError && (
+                    <div className="create-post-error">{postError}</div>
+                  )}
+                </div>
+
+                <footer className="create-post-footer">
+                  <button
+                    type="button"
+                    className="create-post-cancel"
+                    onClick={closeCreateModal}
+                    disabled={isSubmittingPost}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className="create-post-submit"
+                    onClick={handleSubmitPost}
+                    disabled={isSubmittingPost}
+                  >
+                    {isSubmittingPost ? "Posting..." : "Post"}
+                  </button>
+                </footer>
+              </div>
+            </div>
+          )}
+
           <section className="feed-list">
             {isLoading && (
               <div className="feed-loading">Loading your feed...</div>
             )}
 
-            {!isLoading && posts.length === 0 && (
+            {error && !isLoading && (
+              <div className="feed-error">{error}</div>
+            )}
+
+            {!isLoading && !error && posts.length === 0 && (
               <div className="feed-empty">
-                No posts yet. Try changing filters or creating your first post.
+                Make your first post or join your first circle to start your
+                BFFlix feed.
               </div>
             )}
 
-            {posts.map((post) => (
-              <article key={post._id} className="feed-card">
-                <header className="feed-card-header">
-                  <div className="feed-card-author">
-                    <div className="feed-card-avatar">
-                      {post.authorAvatarUrl ? (
-                        <img
-                          src={post.authorAvatarUrl}
-                          alt={post.authorName}
-                        />
-                      ) : (
-                        <span>
-                          {post.authorName.charAt(0).toUpperCase()}
+            {!isLoading &&
+              !error &&
+              posts.map((post) => (
+                <article key={post._id} className="feed-card">
+                  <header className="feed-card-header">
+                    <div className="feed-card-author">
+                      <div className="feed-card-avatar">
+                        {post.authorAvatarUrl ? (
+                          <img
+                            src={post.authorAvatarUrl}
+                            alt={post.authorName}
+                          />
+                        ) : (
+                          <span>
+                            {post.authorName.charAt(0).toUpperCase()}
+                          </span>
+                        )}
+                      </div>
+                      <div className="feed-card-author-meta">
+                        <div className="feed-card-author-name">
+                          {post.authorName}
+                        </div>
+                        <div className="feed-card-subtitle">
+                          Posted in: {post.circleNames.join(", ")}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="feed-card-timestamp">
+                      {formatTimeAgo(post.createdAt)}
+                    </div>
+                  </header>
+
+                  <div className="feed-card-body">
+                    {post.imageUrl && (
+                      <div className="feed-card-poster">
+                        <img src={post.imageUrl} alt={post.title} />
+                      </div>
+                    )}
+
+                    <div className="feed-card-main">
+                      <div className="feed-card-title-row">
+                        <h2 className="feed-card-title">
+                          {post.title}
+                          {post.year ? ` (${post.year})` : ""}
+                        </h2>
+                        <span className="feed-card-type-pill">
+                          {post.type === "Movie" ? "Movie" : "Show"}
                         </span>
-                      )}
-                    </div>
-                    <div className="feed-card-author-meta">
-                      <div className="feed-card-author-name">
-                        {post.authorName}
                       </div>
-                      <div className="feed-card-subtitle">
-                        Posted in: {post.circleNames.join(", ")}
+
+                      <div className="feed-card-rating-row">
+                        <div
+                          className="feed-card-stars"
+                          aria-label={`Rating ${post.rating} out of 5`}
+                        >
+                          {Array.from({ length: 5 }).map((_, i) => (
+                            <span
+                              key={i}
+                              className={
+                                i < post.rating
+                                  ? "feed-star feed-star--filled"
+                                  : "feed-star"
+                              }
+                            >
+                              ★
+                            </span>
+                          ))}
+                        </div>
                       </div>
-                    </div>
-                  </div>
-                  <div className="feed-card-timestamp">
-                    {formatTimeAgo(post.createdAt)}
-                  </div>
-                </header>
 
-                <div className="feed-card-body">
-                  {post.imageUrl && (
-                    <div className="feed-card-poster">
-                      <img src={post.imageUrl} alt={post.title} />
-                    </div>
-                  )}
+                      <p className="feed-card-text">{post.body}</p>
 
-                  <div className="feed-card-main">
-                    <div className="feed-card-title-row">
-                      <h2 className="feed-card-title">
-                        {post.title}
-                        {post.year ? ` (${post.year})` : ""}
-                      </h2>
-                      <span className="feed-card-type-pill">
-                        {post.type === "Movie" ? "Movie" : "Show"}
-                      </span>
-                    </div>
-
-                    <div className="feed-card-rating-row">
-                      <div className="feed-card-stars" aria-label={`Rating ${post.rating} out of 5`}>
-                        {Array.from({ length: 5 }).map((_, i) => (
-                          <span
-                            key={i}
-                            className={
-                              i < post.rating
-                                ? "feed-star feed-star--filled"
-                                : "feed-star"
-                            }
-                          >
-                            ★
+                      <div className="feed-card-services">
+                        {post.services.map((service) => (
+                          <span key={service} className="feed-service-pill">
+                            {service}
                           </span>
                         ))}
                       </div>
                     </div>
-
-                    <p className="feed-card-text">{post.body}</p>
-
-                    <div className="feed-card-services">
-                      {post.services.map((service) => (
-                        <span
-                          key={service}
-                          className="feed-service-pill"
-                        >
-                          {service}
-                        </span>
-                      ))}
-                    </div>
                   </div>
-                </div>
 
-                <footer className="feed-card-footer">
-                  <button className="feed-footer-action">
-                    <span>❤️</span>
-                    <span>{post.likeCount}</span>
-                  </button>
-                  <button className="feed-footer-action">
-                    <span>💬</span>
-                    <span>{post.commentCount}</span>
-                  </button>
-                  <button className="feed-footer-action feed-footer-action--right">
-                    🔖
-                  </button>
-                </footer>
-              </article>
-            ))}
+                  <footer className="feed-card-footer">
+                    <button className="feed-footer-action">
+                      <span>❤️</span>
+                      <span>{post.likeCount}</span>
+                    </button>
+                    <button className="feed-footer-action">
+                      <span>💬</span>
+                      <span>{post.commentCount}</span>
+                    </button>
+                    <button className="feed-footer-action feed-footer-action--right">
+                      🔖
+                    </button>
+                  </footer>
+                </article>
+              ))}
           </section>
         </main>
 
@@ -360,18 +786,25 @@ const HomePage: React.FC = () => {
                 </button>
               ))}
             </div>
-            <button className="rail-view-all">View all circles</button>
+            <button
+              type="button"
+              className="rail-view-all"
+              onClick={() => navigate("/circles")}
+            >
+              View all circles
+            </button>
           </section>
 
           <section className="rail-card rail-card-ai">
             <header className="rail-card-header">
               <h2 className="rail-card-title">
-                <span className="rail-ai-icon">📈</span> AI Recommendations
+                <span className="rail-ai-icon">AI</span>
+                AI Recommendations
               </h2>
             </header>
             <p className="rail-ai-text">
-              Ask the BFFlix AI for movie and TV recommendations tailored to your
-              taste.
+              Ask the BFFlix AI for movie and TV recommendations tailored to
+              your taste.
             </p>
             <div className="rail-ai-chip-list">
               {aiSuggestions.map((s) => (
@@ -380,7 +813,13 @@ const HomePage: React.FC = () => {
                 </button>
               ))}
             </div>
-            <button className="rail-ai-button">Open AI Assistant</button>
+            <button
+              className="rail-ai-button"
+              type="button"
+              onClick={() => navigate("/assistant")}
+            >
+              Open AI Assistant
+            </button>
           </section>
 
           <section className="rail-card">
@@ -419,7 +858,13 @@ const HomePage: React.FC = () => {
             </div>
           </section>
 
-          <button className="rail-floating-ai-button">🤖</button>
+          <button
+            className="rail-floating-ai-button"
+            type="button"
+            onClick={() => navigate("/assistant")}
+          >
+            <span className="rail-floating-ai-label">AI</span>
+          </button>
         </aside>
       </div>
     </div>

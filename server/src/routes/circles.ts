@@ -96,25 +96,29 @@ r.get("/discover/list", requireAuth, async (req: AuthedRequest, res) => {
   const filter: any = { visibility: "public" };
   if (q) filter.name = { $regex: q, $options: "i" };
 
-  const items = await Circle.find(filter)
+  const circles = await Circle.find(filter)
     .select("name description visibility members createdAt")
     .sort({ createdAt: -1, _id: -1 })
     .skip((page - 1) * limit)
     .limit(limit)
-    .lean({ virtuals: true });
+    .lean(); // use raw _id and map it ourselves
+
+  const items = circles.map((c: any) => ({
+    id: String(c._id), // explicit id so frontend can use it
+    name: c.name,
+    description: c.description,
+    visibility: c.visibility,
+    createdAt: c.createdAt,
+    membersCount: Array.isArray(c.members) ? c.members.length : 0,
+    isMember: Array.isArray(c.members)
+      ? c.members.some((m: any) => String(m) === req.user!.id)
+      : false,
+  }));
 
   res.json({
     page,
     limit,
-    items: items.map((c: any) => ({
-      id: c.id, // virtual from model
-      name: c.name,
-      description: c.description,
-      visibility: c.visibility,
-      createdAt: c.createdAt,
-      membersCount: Array.isArray(c.members) ? c.members.length : 0,
-      isMember: Array.isArray(c.members) ? c.members.some((m: any) => String(m) === req.user!.id) : false,
-    })),
+    items,
   });
 });
 
@@ -129,10 +133,10 @@ r.get("/", requireAuth, async (req: AuthedRequest, res) => {
     .sort({ updatedAt: -1, _id: -1 })
     .skip((page - 1) * limit)
     .limit(limit)
-    .lean({ virtuals: true });
+    .lean(); // no virtuals, we map _id manually
 
   const items = circles.map((c: any) => ({
-    id: c.id, // virtual
+    id: String(c._id), // explicit id for frontend
     name: c.name,
     description: c.description,
     visibility: c.visibility,
@@ -144,7 +148,6 @@ r.get("/", requireAuth, async (req: AuthedRequest, res) => {
 
   res.json({ page, limit, items });
 });
-
 // ---------- Get one circle (members only for full details) ----------
 r.get("/:id", requireAuth, async (req: AuthedRequest, res) => {
   const idCheck = objectId.safeParse(req.params.id);
@@ -192,24 +195,59 @@ r.post("/:id/join", requireAuth, async (req: AuthedRequest, res) => {
   res.json({ ok: true });
 });
 
-// ---------- Leave a circle (owner cannot leave) ----------
+// ---------- Leave a circle (with deletion rule for empty private circles) ----------
 r.post("/:id/leave", requireAuth, async (req: AuthedRequest, res) => {
   const idCheck = objectId.safeParse(req.params.id);
-  if (!idCheck.success) return res.status(400).json({ error: "Invalid id" });
-
-  const circle = await Circle.findById(idCheck.data).select("createdBy members").lean();
-  if (!circle) return res.status(404).json({ error: "Circle not found" });
-
-  if (String(circle.createdBy) === req.user!.id) {
-    return res.status(400).json({ error: "Owner cannot leave their own circle. Delete it or transfer ownership." });
+  if (!idCheck.success) {
+    return res.status(400).json({ error: "Invalid id" });
   }
 
-  const isMember =
-    Array.isArray(circle.members) && circle.members.some((m) => String(m) === req.user!.id);
-  if (!isMember) return res.status(400).json({ error: "You are not a member of this circle" });
+  const circle: any = await Circle.findById(idCheck.data)
+    .select("createdBy members visibility moderators")
+    .lean();
 
-  await Circle.findByIdAndUpdate(circle._id, { $pull: { members: req.user!.id } });
-  res.json({ ok: true });
+  if (!circle) {
+    return res.status(404).json({ error: "Circle not found" });
+  }
+
+  const userId = req.user!.id;
+
+  const isMember =
+    Array.isArray(circle.members) &&
+    circle.members.some((m: any) => String(m) === userId);
+
+  if (!isMember) {
+    return res.status(400).json({ error: "You are not a member of this circle" });
+  }
+
+  // Members that would remain after this user leaves
+  const remainingMembers = Array.isArray(circle.members)
+    ? circle.members.filter((m: any) => String(m) !== userId)
+    : [];
+
+  // If a private circle would become empty, delete it completely
+  if (circle.visibility === "private" && remainingMembers.length === 0) {
+    await Circle.findByIdAndDelete(circle._id);
+    return res.json({ ok: true, deleted: true });
+  }
+
+  // Owner cannot leave while other members remain
+  if (String(circle.createdBy) === userId && remainingMembers.length > 0) {
+    return res.status(400).json({
+      error:
+        "Owner cannot leave while other members remain. Delete the circle or transfer ownership.",
+    });
+  }
+
+  // Normal leave: pull from members (and moderators, if present)
+  await Circle.findByIdAndUpdate(circle._id, {
+    $pull: {
+      members: userId,
+      moderators: userId,
+    },
+  });
+
+  return res.json({ ok: true, deleted: false });
 });
 
 // ---------- Rotate invite code (owner only) ----------
