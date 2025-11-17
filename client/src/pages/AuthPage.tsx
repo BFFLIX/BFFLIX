@@ -1,6 +1,7 @@
 
 // src/pages/AuthPage.tsx
 import React, { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import Logo from "../assets/bfflix-logo.svg";
 
 type Mode = "login" | "signup";
@@ -13,6 +14,7 @@ const API_BASE_URL =
   (import.meta.env.DEV ? "http://localhost:8080" : "https://bfflix.onrender.com");
 
 export default function AuthPage() {
+  const navigate = useNavigate();
   const [mode, setMode] = useState<Mode>("login");
 
   // --- login form state ---
@@ -118,8 +120,9 @@ export default function AuthPage() {
       // You can store this token in a global auth store later:
       // localStorage.setItem("bfflix_token", data.token);
       console.log("Login success:", data);
-      // Redirect to the main app/home dashboard after successful login
-      window.location.href = "/home";
+
+      // Redirect to home/dashboard
+      navigate("/home");
     } catch (err: any) {
       console.error(err);
       setErrorMsg(err.message || "Login failed. Please try again.");

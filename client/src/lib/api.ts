@@ -1,39 +1,85 @@
 
 // client/src/lib/api.ts
 const API_BASE =
-  import.meta.env.VITE_API_BASE_URL || "https://bfflix.onrender.com";
+  import.meta.env.VITE_API_BASE_URL || "http://localhost:8080";
 
-type JsonBody = Record<string, unknown>;
+type Json = Record<string, any> | null;
 
-async function handleResponse(res: Response) {
+// Helper: read the JWT from the "token" cookie (if present)
+function getTokenFromCookie(): string | null {
+  if (typeof document === "undefined") return null;
+  const match = document.cookie
+    .split(";")
+    .map((c) => c.trim())
+    .find((c) => c.startsWith("token="));
+
+  if (!match) return null;
+  // cookie is "token=VALUE"
+  return decodeURIComponent(match.slice("token=".length));
+}
+
+async function request<T = Json>(
+  path: string,
+  options: RequestInit = {}
+): Promise<T> {
+  const token = getTokenFromCookie();
+
+  // Build headers as a plain object so we can mutate them safely
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    ...(options.headers as Record<string, string> | undefined),
+  };
+
+  // Add Authorization header if we have a token and caller didn't set one
+  if (token && !headers.Authorization && !headers.authorization) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: options.method || "GET",
+    headers,
+    // IMPORTANT: send cookies to the backend (for other middleware, etc.)
+    credentials: "include",
+    ...options,
+  });
+
   const text = await res.text();
-  let json: any = null;
+  let data: any = null;
   try {
-    json = text ? JSON.parse(text) : null;
+    data = text ? JSON.parse(text) : null;
   } catch {
-    // non-JSON error from backend
+    // HTML error page or non-JSON response; ignore parse error
   }
 
   if (!res.ok) {
     const message =
-      json?.error ||
-      json?.message ||
-      res.statusText ||
-      "Request failed, please try again.";
+      data?.error ||
+      data?.message ||
+      (res.status === 401 ? "missing_token" : `Request failed: ${res.status}`);
     throw new Error(message);
   }
-  return json;
+
+  return data as T;
 }
 
-export async function apiPost<T = any>(path: string, body: JsonBody): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    credentials: "include", // so cookies/session work if you use them
-    body: JSON.stringify(body),
-  });
+export function apiGet<T = Json>(path: string) {
+  return request<T>(path, { method: "GET" });
+}
 
-  return handleResponse(res);
+export function apiPost<T = Json>(path: string, body?: any) {
+  return request<T>(path, {
+    method: "POST",
+    body: body ? JSON.stringify(body) : undefined,
+  });
+}
+
+export function apiPatch<T = Json>(path: string, body?: any) {
+  return request<T>(path, {
+    method: "PATCH",
+    body: body ? JSON.stringify(body) : undefined,
+  });
+}
+
+export function apiDelete<T = Json>(path: string) {
+  return request<T>(path, { method: "DELETE" });
 }

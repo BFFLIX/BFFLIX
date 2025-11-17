@@ -21,6 +21,7 @@ import viewingsRouter from "./routes/viewings";
 import tmdbRouter from "./routes/tmdb.routes";
 import feedRouter from "./routes/feed";
 import engagementRouter from "./routes/engagement";
+import cookieParser from "cookie-parser";
 
 const app = express();
 
@@ -31,6 +32,8 @@ app.use(helmet());
 app.disable("x-powered-by");
 app.use(cors({ origin: env.CORS_ORIGIN, credentials: true }));
 app.use(express.json({ limit: "1mb" }));
+app.use(cookieParser());
+
 // Public endpoints first (should work even if DB is down)
 app.get("/", (_req, res) => {
   res.send("🎬 BFFlix API is running! Try /health for a status check.");

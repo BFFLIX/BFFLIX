@@ -82,7 +82,15 @@ r.post("/signup", async (req, res) => {
       console.error("Welcome email failed:", e)
     );
 
+    const cookieOptions = {
+      httpOnly: true,
+      sameSite: "lax" as const,
+      secure: process.env.NODE_ENV === "production",
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+    };
+
     return res
+      .cookie("token", token, cookieOptions)
       .status(201)
       .json({ token, user: { id: user._id, email: user.email, name: user.name } });
   } catch (err: any) {
@@ -151,10 +159,20 @@ r.post("/login", async (req, res) => {
     }
 
     const token = signToken(String(user._id), (user as any).tokenVersion ?? 0);
-    return res.json({
-      token,
-      user: { id: user._id, email: user.email, name: user.name },
-    });
+
+    const cookieOptions = {
+      httpOnly: true,
+      sameSite: "lax" as const,
+      secure: process.env.NODE_ENV === "production",
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+    };
+
+    return res
+      .cookie("token", token, cookieOptions)
+      .json({
+        token,
+        user: { id: user._id, email: user.email, name: user.name },
+      });
   } catch (err) {
     console.error("Login error:", err);
     return res.status(500).json({ error: "internal_error" });

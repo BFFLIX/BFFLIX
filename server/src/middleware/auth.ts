@@ -14,14 +14,22 @@ export async function requireAuth(
   next: NextFunction
 ) {
   try {
-    const auth = req.headers.authorization || "";
+    let token: string | null = null;
 
-    // Only accept Authorization: Bearer <token>
-    if (!auth.startsWith("Bearer ")) {
+    // 1) Prefer Authorization: Bearer <token>
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith("Bearer ")) {
+      token = authHeader.slice(7).trim();
+    }
+
+    // 2) Fallback to cookie "token"
+    if (!token && (req as any).cookies?.token) {
+      token = (req as any).cookies.token;
+    }
+
+    if (!token) {
       return res.status(401).json({ error: "missing_token" });
     }
-    const token = auth.slice(7).trim();
-    if (!token) return res.status(401).json({ error: "missing_token" });
 
     let payload: JwtPayload;
     try {
@@ -35,7 +43,6 @@ export async function requireAuth(
 
     const user = await User.findById(payload.sub).select("_id isAdmin").lean();
     if (!user) {
-      // User no longer exists: treat as unauthorized
       return res.status(401).json({ error: "unauthorized" });
     }
 
