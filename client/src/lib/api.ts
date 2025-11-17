@@ -1,7 +1,10 @@
 
 // client/src/lib/api.ts
 const API_BASE =
-  import.meta.env.VITE_API_BASE_URL || "http://localhost:8080";
+  import.meta.env.VITE_API_BASE_URL ||
+  (import.meta.env.DEV
+    ? "http://localhost:8080"           // Dev: local backend
+    : "https://bfflix.onrender.com");   // Prod: Render backend
 
 type Json = Record<string, any> | null;
 
