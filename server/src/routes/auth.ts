@@ -1,5 +1,6 @@
 // server/src/routes/auth.ts
 import { Router } from "express";
+import type { CookieOptions } from "express";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
 import User from "../models/user";
@@ -82,10 +83,13 @@ r.post("/signup", async (req, res) => {
       console.error("Welcome email failed:", e)
     );
 
-    const cookieOptions = {
+    const cookieOptions: CookieOptions = {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
-      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+      sameSite: (process.env.NODE_ENV === "production" ? "none" : "lax") as
+        | "none"
+        | "lax"
+        | "strict",
       path: "/",
       maxAge: 7 * 24 * 60 * 60 * 1000,
     };
@@ -161,10 +165,13 @@ r.post("/login", async (req, res) => {
 
     const token = signToken(String(user._id), (user as any).tokenVersion ?? 0);
 
-    const cookieOptions = {
+    const cookieOptions: CookieOptions = {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
-      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+      sameSite: (process.env.NODE_ENV === "production" ? "none" : "lax") as
+        | "none"
+        | "lax"
+        | "strict",
       path: "/",
       maxAge: 7 * 24 * 60 * 60 * 1000,
     };
