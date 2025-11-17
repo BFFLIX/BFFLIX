@@ -186,8 +186,6 @@ const CirclesPage: React.FC = () => {
 
       await apiPost(`/circles/${circleId}/join`, {});
 
-      // Simplest and most reliable approach is to reload from the
-      // backend so counts and membership stay in sync.
       await loadCircles();
     } catch (err: any) {
       console.error("Error joining circle", err);
@@ -210,10 +208,6 @@ const CirclesPage: React.FC = () => {
 
       await apiPost(`/circles/${circleId}/leave`, {});
 
-      // Backend is responsible for the business rules:
-      // - If this was the last member of a private circle, delete it
-      // - Public circles can exist with 0 members
-      // We just reload the lists.
       await loadCircles();
     } catch (err: any) {
       console.error("Error leaving circle", err);
@@ -230,6 +224,10 @@ const CirclesPage: React.FC = () => {
 
   const handleNavCircles = () => {
     navigate("/circles");
+  };
+
+  const handleNavAssistant = () => {
+    navigate("/assistant");
   };
 
   // -------- render --------
@@ -268,7 +266,11 @@ const CirclesPage: React.FC = () => {
               <span className="app-nav-icon">🎬</span>
               <span>Viewings</span>
             </button>
-            <button className="app-nav-item" type="button">
+            <button
+              className="app-nav-item"
+              type="button"
+              onClick={handleNavAssistant}
+            >
               <span className="app-nav-icon">✨</span>
               <span>AI Assistant</span>
             </button>
@@ -370,10 +372,7 @@ const CirclesPage: React.FC = () => {
                   const isBusyLeaving = leavingCircleId === id;
 
                   return (
-                    <article
-                      key={id || name}
-                      className="circle-card"
-                    >
+                    <article key={id || name} className="circle-card">
                       <div className="circle-card-body">
                         {/* Name + visibility pill */}
                         <div className="circle-card-header-row">
