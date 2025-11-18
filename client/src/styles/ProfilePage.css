@@ -136,6 +136,42 @@
   text-transform: uppercase;
 }
 
+.profile-services-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.profile-services-summary-label {
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(226, 232, 240, 0.7);
+}
+
+.profile-services-summary-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.profile-service-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  font-size: 0.8rem;
+  color: rgba(248, 250, 252, 0.95);
+}
+
+.profile-services-summary-empty {
+  font-size: 0.85rem;
+  color: rgba(226, 232, 240, 0.75);
+}
+
 /* ---------- Sections ---------- */
 
 .profile-header-actions {
@@ -208,6 +244,37 @@
 .profile-edit-hint {
   font-size: 0.78rem;
   color: rgba(148, 163, 184, 0.85);
+}
+
+.profile-service-button-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.profile-service-button {
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  background: rgba(15, 23, 42, 0.5);
+  color: rgba(248, 250, 252, 0.85);
+  padding: 6px 18px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.profile-service-button:hover,
+.profile-service-button:focus-visible {
+  border-color: rgba(248, 250, 252, 0.8);
+  outline: none;
+}
+
+.profile-service-button--active {
+  background: rgba(59, 130, 246, 0.2);
+  border-color: rgba(96, 165, 250, 0.85);
+  color: #dbeafe;
+  box-shadow: 0 8px 24px rgba(37, 99, 235, 0.35);
 }
 
 .profile-edit-file {

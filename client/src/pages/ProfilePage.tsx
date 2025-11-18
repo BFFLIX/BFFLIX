@@ -1,5 +1,5 @@
 // src/pages/ProfilePage.tsx
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import bfflixLogo from "../assets/bfflix-logo.svg";
 import defaultAvatar from "../assets/default-avatar.svg";
@@ -7,7 +7,16 @@ import { apiGet, apiPatch } from "../lib/api";
 import { fetchTmdbTitleDetails } from "../lib/TMDBService";
 import "../styles/ProfilePage.css";
 
-type Circle = { id?: string; _id?: string; circleId?: string; name?: string };
+type CircleVisibility = "private" | "public";
+type Circle = {
+  id?: string;
+  _id?: string;
+  circleId?: string;
+  name?: string;
+  visibility?: CircleVisibility;
+  circle?: Circle;
+  [key: string]: any;
+};
 type Viewing = {
   _id: string;
   type?: string;
@@ -26,11 +35,84 @@ type ProfileViewing = Viewing & {
   safeRating: number;
 };
 
+type UserResponse = {
+  name: string;
+  avatarUrl?: string | null;
+  services?: ServiceKey[] | null;
+};
+
+const SERVICE_OPTIONS = [
+  { key: "netflix", label: "Netflix" },
+  { key: "hulu", label: "Hulu" },
+  { key: "max", label: "Max" },
+  { key: "prime", label: "Prime Video" },
+  { key: "disney", label: "Disney+" },
+  { key: "peacock", label: "Peacock" },
+] as const;
+
+type ServiceKey = (typeof SERVICE_OPTIONS)[number]["key"];
+
+const SERVICE_KEY_SET = new Set<ServiceKey>(SERVICE_OPTIONS.map((option) => option.key));
+const SERVICE_LABEL_MAP = SERVICE_OPTIONS.reduce((acc, option) => {
+  acc[option.key] = option.label;
+  return acc;
+}, {} as Record<ServiceKey, string>);
+
+const orderServices = (services: Iterable<ServiceKey>): ServiceKey[] => {
+  const set = new Set<ServiceKey>(services);
+  return SERVICE_OPTIONS.map((option) => option.key).filter((key) => set.has(key));
+};
+
+const normalizeServices = (list: unknown): ServiceKey[] => {
+  if (!Array.isArray(list)) return [];
+  const matches: ServiceKey[] = [];
+  for (const item of list) {
+    if (typeof item !== "string") continue;
+    const normalized = item.toLowerCase() as ServiceKey;
+    if (SERVICE_KEY_SET.has(normalized)) {
+      matches.push(normalized);
+    }
+  }
+  return orderServices(matches);
+};
+
 const MAX_RECENT_VIEWINGS = 3;
 const MAX_AVATAR_BYTES = 600 * 1024; // ~600KB
 const VIEWINGS_VISIBILITY_KEY = "profile:viewingsVisibility";
 
 const DATA_URL_REGEX = /^data:image\/[a-zA-Z]+;base64,/;
+
+const getCircleBase = (circle: Circle): Circle => {
+  return (circle.circle as Circle) || circle;
+};
+
+const getCircleId = (circle: Circle): string | null => {
+  if (circle.id) return String(circle.id);
+  if (circle._id) return String(circle._id);
+  if (circle.circleId) return String(circle.circleId);
+
+  if (circle.circle) {
+    const inner = circle.circle as Circle;
+    if (inner.id) return String(inner.id);
+    if (inner._id) return String(inner._id);
+    if (inner.circleId) return String(inner.circleId);
+  }
+
+  return null;
+};
+
+const getCircleName = (circle: Circle): string => {
+  const base = getCircleBase(circle);
+  return base.name || "Untitled circle";
+};
+
+const getCircleVisibility = (circle: Circle): CircleVisibility => {
+  const base = getCircleBase(circle);
+  const value = typeof base.visibility === "string" ? base.visibility.toLowerCase() : "";
+  return value === "public" ? "public" : "private";
+};
+
+const isCirclePublic = (circle: Circle) => getCircleVisibility(circle) === "public";
 
 function formatViewingDate(dateIso?: string) {
   if (!dateIso) return undefined;
@@ -71,6 +153,8 @@ export default function ProfilePage() {
   const [editAvatarUrl, setEditAvatarUrl] = useState("");
   const [savingProfile, setSavingProfile] = useState(false);
   const [profileSaveError, setProfileSaveError] = useState<string | null>(null);
+  const [userServices, setUserServices] = useState<ServiceKey[]>([]);
+  const [editServices, setEditServices] = useState<ServiceKey[]>([]);
 
   // Circles state
   const [circles, setCircles] = useState<Circle[]>([]);
@@ -90,15 +174,20 @@ export default function ProfilePage() {
     return true;
   });
 
+  const publicCircles = useMemo(() => circles.filter(isCirclePublic), [circles]);
+
   // Fetch /me
   useEffect(() => {
     const fetchMe = async () => {
       try {
         setUserLoading(true);
         setUserError(null);
-        const res = await apiGet<{ name: string; avatarUrl?: string | null }>("/me");
+        const res = await apiGet<UserResponse>("/me");
         setUserName(res.name);
         setAvatarUrl(res.avatarUrl || "");
+        const normalizedServices = normalizeServices(res.services);
+        setUserServices(normalizedServices);
+        setEditServices(normalizedServices);
       } catch (err: any) {
         console.error("Failed to load user", err);
         setUserError(err.message || "Failed to load user data.");
@@ -223,12 +312,22 @@ export default function ProfilePage() {
     setIsEditingProfile(true);
     setEditName(userName);
     setEditAvatarUrl(avatarUrl);
+    setEditServices(userServices);
     setProfileSaveError(null);
   };
 
   const closeEditProfile = () => {
     setIsEditingProfile(false);
     setProfileSaveError(null);
+  };
+
+  const toggleServiceSelection = (serviceKey: ServiceKey) => {
+    setEditServices((prev) => {
+      const next = prev.includes(serviceKey)
+        ? prev.filter((key) => key !== serviceKey)
+        : [...prev, serviceKey];
+      return orderServices(next);
+    });
   };
 
   const handleSaveProfile = async (e?: React.FormEvent) => {
@@ -244,13 +343,14 @@ export default function ProfilePage() {
       const payload = {
         name: editName.trim(),
         avatarUrl: editAvatarUrl.trim(),
+        services: editServices,
       };
-      const updated = await apiPatch<{ name: string; avatarUrl?: string | null }>(
-        "/me",
-        payload
-      );
+      const updated = await apiPatch<UserResponse>("/me", payload);
       setUserName(updated.name);
       setAvatarUrl(updated.avatarUrl || "");
+      const normalizedServices = normalizeServices(updated.services);
+      setUserServices(normalizedServices);
+      setEditServices(normalizedServices);
       setIsEditingProfile(false);
     } catch (err: any) {
       setProfileSaveError(err.message || "Failed to update profile.");
@@ -392,13 +492,32 @@ export default function ProfilePage() {
 
                 <div className="profile-stats">
                   <div className="profile-stat-item">
-                    <div className="stat-value">{circles.length}</div>
-                    <div className="stat-label">Circles</div>
+                    <div className="stat-value">{publicCircles.length}</div>
+                    <div className="stat-label">Public circles</div>
                   </div>
                   <div className="profile-stat-item">
                     <div className="stat-value">{viewingsCount}</div>
                     <div className="stat-label">Viewings logged</div>
                   </div>
+                </div>
+
+                <div className="profile-services-summary">
+                  <span className="profile-services-summary-label">Streaming services you use</span>
+                  {userLoading ? (
+                    <p className="profile-services-summary-empty">Loading services...</p>
+                  ) : userServices.length > 0 ? (
+                    <div className="profile-services-summary-list">
+                      {userServices.map((service) => (
+                        <span key={service} className="profile-service-chip">
+                          {SERVICE_LABEL_MAP[service]}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="profile-services-summary-empty">
+                      You haven't selected any streaming services yet.
+                    </p>
+                  )}
                 </div>
 
                 <div className="profile-header-actions">
@@ -465,6 +584,32 @@ export default function ProfilePage() {
                       </button>
                     </div>
                   </div>
+                  <div className="profile-edit-field profile-edit-services">
+                    <span className="profile-edit-label">Streaming services</span>
+                    <div className="profile-service-button-grid">
+                      {SERVICE_OPTIONS.map((option) => {
+                        const isActive = editServices.includes(option.key);
+                        return (
+                          <button
+                            type="button"
+                            key={option.key}
+                            className={
+                              isActive
+                                ? "profile-service-button profile-service-button--active"
+                                : "profile-service-button"
+                            }
+                            onClick={() => toggleServiceSelection(option.key)}
+                            aria-pressed={isActive}
+                          >
+                            {option.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <small className="profile-edit-hint">
+                      Pick every platform you actively use so we can personalize your feed.
+                    </small>
+                  </div>
                 </div>
                 {profileSaveError && (
                   <div className="profile-edit-error">{profileSaveError}</div>
@@ -511,15 +656,16 @@ export default function ProfilePage() {
                 <div className="circles-loading">Loading circles...</div>
               )}
               {circlesError && <div className="circles-error">{circlesError}</div>}
-              {!circlesLoading && !circlesError && circles.length === 0 && (
+              {!circlesLoading && !circlesError && publicCircles.length === 0 && (
                 <div className="circles-empty">
-                  You are not a member of any circles.
+                  You are not part of any public circles yet.
                 </div>
               )}
-              {!circlesLoading && !circlesError && circles.length > 0 && (
+              {!circlesLoading && !circlesError && publicCircles.length > 0 && (
                 <div className="profile-circles-list">
-                  {circles.map((circle) => {
-                    const id = String(circle.id || circle._id || circle.circleId);
+                  {publicCircles.map((circle) => {
+                    const id = getCircleId(circle);
+                    if (!id) return null;
                     return (
                       <button
                         type="button"
@@ -527,7 +673,7 @@ export default function ProfilePage() {
                         className="profile-circle-button"
                         onClick={() => navigate(`/circles/${id}`)}
                       >
-                        {circle.name || "Untitled circle"}
+                        {getCircleName(circle)}
                       </button>
                     );
                   })}
