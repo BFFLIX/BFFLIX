@@ -201,6 +201,7 @@ r.get(
       }
 
       // Posts liked by the current user (for likedByMe flag)
+      // Build set of post IDs liked by the current user
       const likedByMe = new Set<string>();
       if (postIds.length) {
         const mine = await Like.find({
