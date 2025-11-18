@@ -222,7 +222,7 @@ const AiAssistantPage: React.FC = () => {
             <button
               className="app-nav-item app-nav-item--active"
               type="button"
-              onClick={() => navigate("/assistant")}
+              onClick={() => navigate("/ai")}
             >
               <span className="app-nav-icon">✨</span>
               <span>AI Assistant</span>

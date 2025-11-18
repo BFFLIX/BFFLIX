@@ -232,7 +232,7 @@ const CirclesPage: React.FC = () => {
   };
 
   const handleNavAssistant = () => {
-    navigate("/assistant");
+    navigate("/ai");
   };
 
   // -------- render --------
