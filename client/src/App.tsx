@@ -7,6 +7,8 @@ import CirclesPage from "./pages/CirclePage";
 import CircleDetailsPage from "./pages/CircleDetailsPage";
 import AiAssistantPage from "./pages/AiAssistantPage";
 import ViewingsPage from "./pages/ViewingsPage";
+import ProfilePage from "./pages/ProfilePage";
+
 
 function App() {
   return (
@@ -21,7 +23,7 @@ function App() {
         <Route path="/circles/:id" element={<CircleDetailsPage />} />
         <Route path="/viewings" element={<ViewingsPage />} />
         <Route path="/ai" element={<AiAssistantPage />} />
-
+        <Route path="/profile" element={<ProfilePage />} />
         {/* Catch-all */}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
