@@ -2,7 +2,7 @@
 // src/pages/AiAssistantPage.tsx
 import React, { useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-//import bfflixLogo from "../assets/bfflix-logo.svg";
+import bfflixLogo from "../assets/bfflix-logo.svg";
 import { apiPost } from "../lib/api";
 import "../styles/AiAssistantPage.css";
 
@@ -191,13 +191,13 @@ const AiAssistantPage: React.FC = () => {
       <div className="app-main-layout">
         {/* LEFT SIDEBAR (same structure as Home / Circles) */}
         <aside className="app-sidebar">
-          {/* <div className="app-sidebar-brand">
+          <div className="app-sidebar-brand">
             <img
               src={bfflixLogo}
               alt="BFFLIX"
               className="app-sidebar-logo-img"
             />
-          </div> */}
+          </div>
 
           <nav className="app-sidebar-nav">
             <button
