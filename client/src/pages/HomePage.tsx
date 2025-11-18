@@ -3,6 +3,7 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import bfflixLogo from "../assets/bfflix-logo.svg";
+import defaultProfile from "../assets/default-profile.png";
 import { apiGet, apiPost, apiDelete } from "../lib/api";
 import "../styles/HomePage.css";
 
@@ -463,6 +464,8 @@ const HomePage: React.FC = () => {
 
     // ----------------- Data loading -----------------
 
+  const [me, setMe] = useState<any>(null);
+
   const fetchAll = useCallback(async () => {
     setIsLoading(true);
     setError(null);
@@ -534,6 +537,7 @@ const HomePage: React.FC = () => {
 
   useEffect(() => {
     fetchAll();
+    apiGetUser("/me").then(setMe);
   }, [fetchAll]);
 
   // Load current user id once for author-only actions
@@ -843,34 +847,36 @@ const HomePage: React.FC = () => {
   };
 
   // ----------------- Render -----------------
-
+  //comment
   return (
     <div className="app-shell">
-      <div className="home-topbar">
-        <h1 className="home-topbar-title">Home</h1>
-        <div className="home-topbar-right">
-          <button
-            type="button"
-            className="profile-chip"
-            onClick={() => navigate("/profile")}
-          >
-            <span className="profile-chip-avatar">👤</span>
-            <span className="profile-chip-name">
-              {currentUserName || "Profile"}
-            </span>
+      <header className="app-topbar">
+        <div className="topbar-left">
+          <img src={bfflixLogo} alt="BFFLIX" className="topbar-logo" />
+        </div>
+
+        <div className="topbar-center">
+          <h1>Home</h1>
+        </div>
+
+        <div className="topbar-right">
+          <button className="topbar-profile-btn">
+            <img src={defaultProfile} alt="profile" />
+            <span>{me?.name || ""}</span>
           </button>
         </div>
-      </div>
+      </header>
+
       <div className="app-main-layout">
         {/* Left sidebar */}
         <aside className="app-sidebar">
-          <div className="app-sidebar-brand">
+          {/* <div className="app-sidebar-brand">
             <img
               src={bfflixLogo}
               alt="BFFLIX"
               className="app-sidebar-logo-img"
             />
-          </div>
+          </div> */}
 
           <nav className="app-sidebar-nav">
             <button className="app-nav-item app-nav-item--active">
@@ -902,14 +908,13 @@ const HomePage: React.FC = () => {
               <span>AI Assistant</span>
             </button>
           </nav>
-
-          <button className="app-logout-button">Log out</button>
+          <button className="app-logout-button">Log Out</button>
         </aside>
 
         {/* Center feed */}
         <main className="app-feed">
           <header className="feed-header">
-            <h1 className="feed-title">Home</h1>
+            {/* <h1 className="feed-title">Home</h1> */}
 
             <div className="feed-top-row">
               <div className="feed-tabs">
