@@ -2,8 +2,8 @@
 // src/pages/HomePage.tsx
 import React, { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-// import bfflixLogo from "../assets/bfflix-logo.svg";
-// import defaultProfile from "../assets/default-profile.png";
+import bfflixLogo from "../assets/bfflix-logo.svg";
+import defaultProfile from "../assets/default-profile.png";
 import { apiGet, apiPost, apiDelete } from "../lib/api";
 import "../styles/HomePage.css";
 
