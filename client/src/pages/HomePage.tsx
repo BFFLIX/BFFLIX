@@ -60,13 +60,6 @@ type AiSuggestion = {
   text: string;
 };
 
-type RecentViewing = {
-  id: string;
-  title: string;
-  rating: number;
-  posterUrl?: string;
-};
-
 // A loose shape for whatever the /circles endpoint returns.
 // We normalize this into the stricter Circle type used in the UI.
 type RawCircleLike = {
