@@ -32,6 +32,8 @@ type FeedPost = {
   title: string;
   year?: number;
   type: "Movie" | "Show";
+  mediaType?: "movie" | "tv";
+  tmdbId?: string;
   rating: number;
   body: string;
   services: ServiceTag[];
@@ -198,6 +200,11 @@ const normalizeFeedItems = (items: any[], circlesLookup: Map<string, string>): F
         raw?.type === "tv" || raw?.type === "tv_show" || raw?.type === "Show"
           ? "Show"
           : "Movie",
+      mediaType:
+        raw?.type === "tv" || raw?.type === "tv_show" || raw?.type === "Show"
+          ? "tv"
+          : "movie",
+      tmdbId: raw?.tmdbId ? String(raw.tmdbId) : undefined,
       rating: typeof raw?.rating === "number" ? raw.rating : 0,
       body,
       services: services as any,
@@ -269,7 +276,6 @@ const HomePage: React.FC = () => {
   const [currentUserName, setCurrentUserName] = useState<string | null>(null);
   const [circles, setCircles] = useState<Circle[]>([]);
   const [aiSuggestions] = useState<AiSuggestion[]>(STATIC_AI_SUGGESTIONS);
-  const [recentViewings, setRecentViewings] = useState<RecentViewing[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [commentDrafts, setCommentDrafts] = useState<Record<string, string>>(
@@ -278,6 +284,9 @@ const HomePage: React.FC = () => {
   const [commentSubmitting, setCommentSubmitting] = useState<
     Record<string, boolean>
   >({});
+  const [viewingSaving, setViewingSaving] = useState<Record<string, boolean>>(
+    {}
+  );
   const [openComments, setOpenComments] = useState<Record<string, boolean>>({});
   const [comments, setComments] = useState<Record<string, FeedComment[]>>({});
   const [commentsLoading, setCommentsLoading] = useState<
@@ -376,16 +385,6 @@ const HomePage: React.FC = () => {
       setIsLoading(false);
     }
 
-    // 2. Soft-fail extra: recent viewings.
-    //    If this 404s in prod we just log it and leave the UI empty
-    //    instead of crashing the main feed.
-    try {
-      const recentData = await apiGet<RecentViewing[]>("/viewings/recent");
-      setRecentViewings(recentData);
-    } catch (err) {
-      console.warn("Failed to load recent viewings (non-fatal)", err);
-      setRecentViewings([]);
-    }
   }, [activeTab, activeService, sortOrder]);
 
   useEffect(() => {
@@ -499,6 +498,25 @@ const HomePage: React.FC = () => {
       });
     } catch (err) {
       console.error("Delete failed", err);
+    }
+  };
+
+  const handleAddViewing = async (post: FeedPost) => {
+    if (!post.tmdbId) return;
+    const kind: "movie" | "tv" = post.mediaType === "tv" ? "tv" : "movie";
+    try {
+      setViewingSaving((prev) => ({ ...prev, [post._id]: true }));
+      await apiPost("/viewings", {
+        type: kind,
+        tmdbId: post.tmdbId,
+        rating: post.rating || undefined,
+        comment: post.body || undefined,
+        watchedAt: post.createdAt,
+      });
+    } catch (err) {
+      console.error("Add viewing failed", err);
+    } finally {
+      setViewingSaving((prev) => ({ ...prev, [post._id]: false }));
     }
   };
 
@@ -1164,6 +1182,17 @@ const HomePage: React.FC = () => {
                     >
                       <span>💬</span>
                       <span>{post.commentCount}</span>
+                    </button>
+                    <button
+                      className="feed-footer-action"
+                      type="button"
+                      onClick={() => handleAddViewing(post)}
+                      disabled={!post.tmdbId || viewingSaving[post._id]}
+                    >
+                      <span>🎬</span>
+                      <span>
+                        {viewingSaving[post._id] ? "Saving..." : "Add to viewings"}
+                      </span>
                     </button>
                     <button className="feed-footer-action feed-footer-action--right">
                       🔖

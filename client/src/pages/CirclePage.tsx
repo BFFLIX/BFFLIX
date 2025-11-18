@@ -3,7 +3,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { apiGet, apiPost } from "../lib/api";
-import CreateCircleModal from "../components/CreateCircleModal";
 import bfflixLogo from "../assets/bfflix-logo.svg";
 import "../styles/CirclesPage.css";
 
