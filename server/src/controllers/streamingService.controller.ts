@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import mongoose from 'mongoose';
 import StreamingService from '../models/StreamingService';
 import UserStreamingService from '../models/UserStreamingService';
 import { AuthedRequest } from '../middleware/auth';
@@ -167,6 +168,60 @@ class StreamingServiceController {
       res.status(500).json({
         success: false,
         message: 'Failed to seed streaming services',
+      });
+    }
+  }
+
+  // PUT /api/users/me/streaming-services - Replace the user's services in bulk
+  async replaceUserServices(req: AuthedRequest, res: Response) {
+    try {
+      const userId = req.user!.id;
+      const { streamingServiceIds } = req.body || {};
+
+      if (!Array.isArray(streamingServiceIds)) {
+        return res.status(400).json({
+          success: false,
+          message: 'streamingServiceIds must be an array',
+        });
+      }
+
+      const normalizedIds = streamingServiceIds
+        .filter((id) => typeof id === 'string')
+        .map((id) => id.trim())
+        .filter((id) => id.length > 0)
+        .filter((id, index, self) => self.indexOf(id) === index)
+        .filter((id) => mongoose.Types.ObjectId.isValid(id))
+        .map((id) => new mongoose.Types.ObjectId(id));
+
+      if (!normalizedIds.length) {
+        await UserStreamingService.deleteMany({ userId });
+        return res.json({ success: true, data: [] });
+      }
+
+      const validServices = await StreamingService.find({ _id: { $in: normalizedIds } })
+        .select('_id')
+        .lean();
+      const validIdSet = new Set(validServices.map((s) => String(s._id)));
+
+      await UserStreamingService.deleteMany({ userId });
+
+      if (validIdSet.size) {
+        const docs = Array.from(validIdSet).map((serviceId) => ({
+          userId,
+          streamingServiceId: serviceId,
+        }));
+        await UserStreamingService.insertMany(docs, { ordered: false });
+      }
+
+      res.json({
+        success: true,
+        data: Array.from(validIdSet),
+      });
+    } catch (error) {
+      console.error('Error replacing user streaming services:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to update streaming services',
       });
     }
   }

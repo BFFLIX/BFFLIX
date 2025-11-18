@@ -1,6 +1,6 @@
 
 // src/pages/HomePage.tsx
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { apiGet, apiPost, apiDelete } from "../lib/api";
 import "../styles/HomePage.css";
@@ -13,13 +13,13 @@ type Circle = {
   memberCount: number;
 };
 
-type ServiceTag =
-  | "Netflix"
-  | "Hulu"
-  | "Prime Video"
-  | "Disney+"
-  | "Max"
-  | "Apple TV+";
+type StreamingService = {
+  _id: string;
+  name: string;
+  tmdbProviderId?: number;
+  logoPath?: string;
+  displayPriority?: number;
+};
 
 type FeedPost = {
   _id: string;
@@ -213,6 +213,23 @@ const normalizeFeedItems = (
   });
 };
 
+const extractList = <T,>(payload: any): T[] => {
+  if (Array.isArray(payload)) return payload as T[];
+  if (Array.isArray(payload?.data)) return payload.data as T[];
+  if (Array.isArray(payload?.items)) return payload.items as T[];
+  return [];
+};
+
+const normalizeStreamingServices = (payload: any): StreamingService[] => {
+  const list = extractList<StreamingService>(payload);
+  return [...list].sort((a, b) => {
+    const priorityDiff =
+      (b.displayPriority ?? 0) - (a.displayPriority ?? 0);
+    if (priorityDiff !== 0) return priorityDiff;
+    return a.name.localeCompare(b.name);
+  });
+};
+
 // RecentViewing type for recently watched
 type RecentViewing = {
   id: string;
@@ -268,9 +285,8 @@ const HomePage: React.FC = () => {
   const navigate = useNavigate();
 
   const [activeTab, setActiveTab] = useState<"all" | "circles" | "mine">("all");
-  const [activeService, setActiveService] = useState<
-    ServiceTag | "All services"
-  >("All services");
+  const [activeServiceFilterKey, setActiveServiceFilterKey] =
+    useState<string>("all");
   const [sortOrder, setSortOrder] = useState<"latest" | "smart">("latest");
 
   const [posts, setPosts] = useState<FeedPost[]>([]);
@@ -318,6 +334,9 @@ const HomePage: React.FC = () => {
   const [selectedCircleIds, setSelectedCircleIds] = useState<string[]>([]);
   const [isSubmittingPost, setIsSubmittingPost] = useState(false);
   const [postError, setPostError] = useState<string | null>(null);
+  const [userServices, setUserServices] = useState<StreamingService[]>([]);
+  const [userServicesLoading, setUserServicesLoading] = useState(false);
+  const [userServicesError, setUserServicesError] = useState<string | null>(null);
 
   // ----------------- Data loading -----------------
 
@@ -330,11 +349,7 @@ const HomePage: React.FC = () => {
         apiGet<FeedResponse>(
           `/feed?scope=${encodeURIComponent(
             activeTab
-          )}&sort=${encodeURIComponent(sortOrder)}${
-            activeService === "All services"
-              ? ""
-              : `&service=${encodeURIComponent(activeService)}`
-          }`
+          )}&sort=${encodeURIComponent(sortOrder)}`
         ),
         apiGet<any>("/circles"),
       ]);
@@ -383,7 +398,7 @@ const HomePage: React.FC = () => {
       console.warn("Failed to load recent viewings (non-fatal)", err);
       setRecentViewings([]);
     }
-  }, [activeTab, activeService, sortOrder]);
+  }, [activeTab, sortOrder]);
 
   useEffect(() => {
     fetchAll();
@@ -406,6 +421,45 @@ const HomePage: React.FC = () => {
     })();
   }, []);
 
+  useEffect(() => {
+    const fetchUserServices = async () => {
+      try {
+        setUserServicesLoading(true);
+        setUserServicesError(null);
+        const data = await apiGet<any>("/api/users/me/streaming-services");
+        const services = normalizeStreamingServices(data);
+        setUserServices(services);
+      } catch (err: any) {
+        console.error("Failed to load user streaming services", err);
+        setUserServicesError(
+          err?.message || "Failed to load your streaming services."
+        );
+      } finally {
+        setUserServicesLoading(false);
+      }
+    };
+    fetchUserServices();
+  }, []);
+
+  useEffect(() => {
+    if (
+      activeServiceFilterKey === "mine" &&
+      userServices.length === 0 &&
+      !userServicesLoading
+    ) {
+      setActiveServiceFilterKey("all");
+      return;
+    }
+
+    if (
+      activeServiceFilterKey !== "all" &&
+      activeServiceFilterKey !== "mine" &&
+      !userServices.some((svc) => svc._id === activeServiceFilterKey)
+    ) {
+      setActiveServiceFilterKey("all");
+    }
+  }, [activeServiceFilterKey, userServices, userServicesLoading]);
+
   // ----------------- Helpers -----------------
 
   const formatTimeAgo = (iso: string) => {
@@ -419,15 +473,80 @@ const HomePage: React.FC = () => {
     return `${diffDays}d ago`;
   };
 
-  const servicesList: (ServiceTag | "All services")[] = [
-    "All services",
-    "Netflix",
-    "Hulu",
-    "Prime Video",
-    "Disney+",
-    "Max",
-    "Apple TV+",
-  ];
+  const userServiceNames = useMemo(
+    () =>
+      userServices
+        .map((service) => service.name?.trim().toLowerCase())
+        .filter((name): name is string => Boolean(name)),
+    [userServices]
+  );
+
+  const serviceFilterOptions = useMemo(() => {
+    const options = [
+      { key: "all", label: "All services", type: "all", disabled: false },
+      {
+        key: "mine",
+        label: "Your services",
+        type: "mine",
+        disabled: userServices.length === 0,
+      },
+    ];
+
+    userServices.forEach((service) => {
+      options.push({
+        key: service._id,
+        label: service.name,
+        type: "service",
+        disabled: false,
+      });
+    });
+
+    return options;
+  }, [userServices]);
+
+  const filteredPosts = useMemo(() => {
+    if (activeServiceFilterKey === "all") {
+      return posts;
+    }
+
+    if (activeServiceFilterKey === "mine") {
+      if (userServiceNames.length === 0) {
+        return posts;
+      }
+      const nameSet = new Set(userServiceNames);
+      return posts.filter((post) => {
+        const normalizedPostServices = (post.services || [])
+          .map((service) =>
+            typeof service === "string"
+              ? service.trim().toLowerCase()
+              : ""
+          )
+          .filter((value): value is string => Boolean(value));
+        if (normalizedPostServices.length === 0) return false;
+        return normalizedPostServices.some((service) => nameSet.has(service));
+      });
+    }
+
+    const selectedService = userServices.find(
+      (service) => service._id === activeServiceFilterKey
+    );
+    if (!selectedService) {
+      return posts;
+    }
+
+    const targetName = selectedService.name?.trim().toLowerCase();
+    if (!targetName) {
+      return posts;
+    }
+
+    return posts.filter((post) =>
+      (post.services || []).some(
+        (service) =>
+          typeof service === "string" &&
+          service.trim().toLowerCase() === targetName
+      )
+    );
+  }, [activeServiceFilterKey, posts, userServiceNames, userServices]);
 
   const openCreateModal = () => {
     setIsCreateOpen(true);
@@ -804,19 +923,28 @@ const HomePage: React.FC = () => {
 
             <div className="feed-filters-row">
               <div className="feed-services">
-                {servicesList.map((s) => (
+                {serviceFilterOptions.map((option) => (
                   <button
-                    key={s}
+                    key={option.key}
                     className={
-                      activeService === s
+                      activeServiceFilterKey === option.key
                         ? "feed-service-chip feed-service-chip--active"
                         : "feed-service-chip"
                     }
-                    onClick={() => setActiveService(s)}
+                    onClick={() => setActiveServiceFilterKey(option.key)}
+                    disabled={option.disabled || userServicesLoading}
                   >
-                    {s}
+                    {option.label}
                   </button>
                 ))}
+                {userServicesLoading && (
+                  <span className="feed-service-status">Loading services...</span>
+                )}
+                {userServicesError && !userServicesLoading && (
+                  <span className="feed-service-status feed-service-status--error">
+                    {userServicesError}
+                  </span>
+                )}
               </div>
 
               <div className="feed-sort">
@@ -1082,7 +1210,16 @@ const HomePage: React.FC = () => {
 
             {!isLoading &&
               !error &&
-              posts.map((post) => (
+              posts.length > 0 &&
+              filteredPosts.length === 0 && (
+                <div className="feed-empty">
+                  No posts match your streaming service filter yet.
+                </div>
+              )}
+
+            {!isLoading &&
+              !error &&
+              filteredPosts.map((post) => (
                 <article key={post._id} className="feed-card">
                   <header className="feed-card-header">
                     <div className="feed-card-author">

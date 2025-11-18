@@ -1,9 +1,9 @@
 // src/pages/ProfilePage.tsx
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import bfflixLogo from "../assets/bfflix-logo.svg";
 import defaultAvatar from "../assets/default-avatar.svg";
-import { apiGet, apiPatch } from "../lib/api";
+import { apiDelete, apiGet, apiPatch, apiPost, apiPut } from "../lib/api";
 import { fetchTmdbTitleDetails } from "../lib/TMDBService";
 import "../styles/ProfilePage.css";
 
@@ -38,42 +38,21 @@ type ProfileViewing = Viewing & {
 type UserResponse = {
   name: string;
   avatarUrl?: string | null;
-  services?: ServiceKey[] | null;
 };
 
-const SERVICE_OPTIONS = [
-  { key: "netflix", label: "Netflix" },
-  { key: "hulu", label: "Hulu" },
-  { key: "max", label: "Max" },
-  { key: "prime", label: "Prime Video" },
-  { key: "disney", label: "Disney+" },
-  { key: "peacock", label: "Peacock" },
-] as const;
-
-type ServiceKey = (typeof SERVICE_OPTIONS)[number]["key"];
-
-const SERVICE_KEY_SET = new Set<ServiceKey>(SERVICE_OPTIONS.map((option) => option.key));
-const SERVICE_LABEL_MAP = SERVICE_OPTIONS.reduce((acc, option) => {
-  acc[option.key] = option.label;
-  return acc;
-}, {} as Record<ServiceKey, string>);
-
-const orderServices = (services: Iterable<ServiceKey>): ServiceKey[] => {
-  const set = new Set<ServiceKey>(services);
-  return SERVICE_OPTIONS.map((option) => option.key).filter((key) => set.has(key));
+type StreamingService = {
+  _id: string;
+  name: string;
+  tmdbProviderId?: number;
+  logoPath?: string;
+  displayPriority?: number;
 };
 
-const normalizeServices = (list: unknown): ServiceKey[] => {
-  if (!Array.isArray(list)) return [];
-  const matches: ServiceKey[] = [];
-  for (const item of list) {
-    if (typeof item !== "string") continue;
-    const normalized = item.toLowerCase() as ServiceKey;
-    if (SERVICE_KEY_SET.has(normalized)) {
-      matches.push(normalized);
-    }
-  }
-  return orderServices(matches);
+const extractList = <T,>(payload: any): T[] => {
+  if (Array.isArray(payload)) return payload as T[];
+  if (Array.isArray(payload?.data)) return payload.data as T[];
+  if (Array.isArray(payload?.items)) return payload.items as T[];
+  return [];
 };
 
 const MAX_RECENT_VIEWINGS = 3;
@@ -153,8 +132,14 @@ export default function ProfilePage() {
   const [editAvatarUrl, setEditAvatarUrl] = useState("");
   const [savingProfile, setSavingProfile] = useState(false);
   const [profileSaveError, setProfileSaveError] = useState<string | null>(null);
-  const [userServices, setUserServices] = useState<ServiceKey[]>([]);
-  const [editServices, setEditServices] = useState<ServiceKey[]>([]);
+  const [userServices, setUserServices] = useState<StreamingService[]>([]);
+  const [userServicesLoading, setUserServicesLoading] = useState(false);
+  const [userServicesError, setUserServicesError] = useState<string | null>(null);
+  const [availableServices, setAvailableServices] = useState<StreamingService[]>([]);
+  const [availableServicesLoading, setAvailableServicesLoading] = useState(false);
+  const [availableServicesError, setAvailableServicesError] = useState<string | null>(null);
+  const [availableServicesSearch, setAvailableServicesSearch] = useState("");
+  const [editServices, setEditServices] = useState<string[]>([]);
 
   // Circles state
   const [circles, setCircles] = useState<Circle[]>([]);
@@ -175,6 +160,73 @@ export default function ProfilePage() {
   });
 
   const publicCircles = useMemo(() => circles.filter(isCirclePublic), [circles]);
+  const serviceSearchQuery = availableServicesSearch.trim();
+  const filteredAvailableServices = useMemo(() => {
+    if (!serviceSearchQuery) return [];
+    const query = serviceSearchQuery.toLowerCase();
+    return availableServices.filter((service) => {
+      const nameMatch = service.name?.toLowerCase().includes(query);
+      const providerMatch = service.tmdbProviderId
+        ? String(service.tmdbProviderId).includes(query)
+        : false;
+      return Boolean(nameMatch || providerMatch);
+    });
+  }, [availableServices, serviceSearchQuery]);
+  const hasServiceSearchQuery = serviceSearchQuery.length > 0;
+
+  const fetchAvailableServices = useCallback(async () => {
+    try {
+      setAvailableServicesLoading(true);
+      setAvailableServicesError(null);
+      const data = await apiGet<any>("/api/streaming-services");
+      const list = extractList<StreamingService>(data);
+      const sorted = [...list].sort((a, b) => {
+        const priorityDiff =
+          (b.displayPriority ?? 0) - (a.displayPriority ?? 0);
+        if (priorityDiff !== 0) return priorityDiff;
+        return a.name.localeCompare(b.name);
+      });
+      setAvailableServices(sorted);
+    } catch (err: any) {
+      console.error("Failed to load available streaming services", err);
+      setAvailableServicesError(
+        err.message || "Failed to load streaming services."
+      );
+    } finally {
+      setAvailableServicesLoading(false);
+    }
+  }, []);
+
+  const fetchUserStreamingServices = useCallback(async () => {
+    try {
+      setUserServicesLoading(true);
+      setUserServicesError(null);
+      const data = await apiGet<any>("/api/users/me/streaming-services");
+      const list = extractList<StreamingService>(data);
+      const sorted = [...list].sort((a, b) => {
+        const priorityDiff =
+          (b.displayPriority ?? 0) - (a.displayPriority ?? 0);
+        if (priorityDiff !== 0) return priorityDiff;
+        return a.name.localeCompare(b.name);
+      });
+      setUserServices(sorted);
+    } catch (err: any) {
+      console.error("Failed to load user streaming services", err);
+      setUserServicesError(
+        err.message || "Failed to load your streaming services."
+      );
+    } finally {
+      setUserServicesLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchAvailableServices();
+  }, [fetchAvailableServices]);
+
+  useEffect(() => {
+    fetchUserStreamingServices();
+  }, [fetchUserStreamingServices]);
 
   // Fetch /me
   useEffect(() => {
@@ -185,9 +237,6 @@ export default function ProfilePage() {
         const res = await apiGet<UserResponse>("/me");
         setUserName(res.name);
         setAvatarUrl(res.avatarUrl || "");
-        const normalizedServices = normalizeServices(res.services);
-        setUserServices(normalizedServices);
-        setEditServices(normalizedServices);
       } catch (err: any) {
         console.error("Failed to load user", err);
         setUserError(err.message || "Failed to load user data.");
@@ -312,21 +361,23 @@ export default function ProfilePage() {
     setIsEditingProfile(true);
     setEditName(userName);
     setEditAvatarUrl(avatarUrl);
-    setEditServices(userServices);
+    setEditServices(userServices.map((service) => service._id));
     setProfileSaveError(null);
+    setAvailableServicesSearch("");
   };
 
   const closeEditProfile = () => {
     setIsEditingProfile(false);
     setProfileSaveError(null);
+    setAvailableServicesSearch("");
   };
 
-  const toggleServiceSelection = (serviceKey: ServiceKey) => {
+  const toggleServiceSelection = (serviceId: string) => {
     setEditServices((prev) => {
-      const next = prev.includes(serviceKey)
-        ? prev.filter((key) => key !== serviceKey)
-        : [...prev, serviceKey];
-      return orderServices(next);
+      if (prev.includes(serviceId)) {
+        return prev.filter((id) => id !== serviceId);
+      }
+      return [...prev, serviceId];
     });
   };
 
@@ -343,14 +394,45 @@ export default function ProfilePage() {
       const payload = {
         name: editName.trim(),
         avatarUrl: editAvatarUrl.trim(),
-        services: editServices,
       };
       const updated = await apiPatch<UserResponse>("/me", payload);
       setUserName(updated.name);
       setAvatarUrl(updated.avatarUrl || "");
-      const normalizedServices = normalizeServices(updated.services);
-      setUserServices(normalizedServices);
-      setEditServices(normalizedServices);
+
+      const currentIds = new Set(userServices.map((service) => service._id));
+      const nextIds = new Set(editServices);
+      const toAdd = editServices.filter((id) => !currentIds.has(id));
+      const toRemove = Array.from(currentIds).filter((id) => !nextIds.has(id));
+
+      if (toAdd.length > 0 || toRemove.length > 0) {
+        let replaceWorked = false;
+        try {
+          await apiPut("/api/users/me/streaming-services", {
+            streamingServiceIds: editServices,
+          });
+          replaceWorked = true;
+        } catch (err) {
+          console.warn(
+            "Bulk streaming service update failed, attempting fallback",
+            err
+          );
+        }
+
+        if (!replaceWorked) {
+          for (const serviceId of toAdd) {
+            await apiPost("/api/users/me/streaming-services", {
+              streamingServiceId: serviceId,
+            });
+          }
+
+          for (const serviceId of toRemove) {
+            await apiDelete(`/api/users/me/streaming-services/${serviceId}`);
+          }
+        }
+
+        await fetchUserStreamingServices();
+      }
+
       setIsEditingProfile(false);
     } catch (err: any) {
       setProfileSaveError(err.message || "Failed to update profile.");
@@ -503,13 +585,17 @@ export default function ProfilePage() {
 
                 <div className="profile-services-summary">
                   <span className="profile-services-summary-label">Streaming services you use</span>
-                  {userLoading ? (
+                  {userServicesLoading ? (
                     <p className="profile-services-summary-empty">Loading services...</p>
+                  ) : userServicesError ? (
+                    <p className="profile-services-summary-empty">
+                      {userServicesError}
+                    </p>
                   ) : userServices.length > 0 ? (
                     <div className="profile-services-summary-list">
                       {userServices.map((service) => (
-                        <span key={service} className="profile-service-chip">
-                          {SERVICE_LABEL_MAP[service]}
+                        <span key={service._id} className="profile-service-chip">
+                          {service.name}
                         </span>
                       ))}
                     </div>
@@ -586,26 +672,65 @@ export default function ProfilePage() {
                   </div>
                   <div className="profile-edit-field profile-edit-services">
                     <span className="profile-edit-label">Streaming services</span>
-                    <div className="profile-service-button-grid">
-                      {SERVICE_OPTIONS.map((option) => {
-                        const isActive = editServices.includes(option.key);
-                        return (
-                          <button
-                            type="button"
-                            key={option.key}
-                            className={
-                              isActive
-                                ? "profile-service-button profile-service-button--active"
-                                : "profile-service-button"
-                            }
-                            onClick={() => toggleServiceSelection(option.key)}
-                            aria-pressed={isActive}
-                          >
-                            {option.label}
-                          </button>
-                        );
-                      })}
-                    </div>
+                    {availableServicesLoading ? (
+                      <p className="profile-services-summary-empty">
+                        Loading streaming services...
+                      </p>
+                    ) : availableServicesError ? (
+                      <p className="profile-services-summary-empty">
+                        {availableServicesError}
+                      </p>
+                    ) : availableServices.length > 0 ? (
+                      <>
+                        <input
+                          type="search"
+                          className="profile-service-search"
+                          placeholder="Search streaming services..."
+                          value={availableServicesSearch}
+                          onChange={(event) =>
+                            setAvailableServicesSearch(event.target.value)
+                          }
+                        />
+                        {hasServiceSearchQuery ? (
+                          filteredAvailableServices.length > 0 ? (
+                            <div className="profile-service-button-grid">
+                              {filteredAvailableServices.map((service) => {
+                                const isActive = editServices.includes(service._id);
+                                return (
+                                  <button
+                                    type="button"
+                                    key={service._id}
+                                    className={
+                                      isActive
+                                        ? "profile-service-button profile-service-button--active"
+                                        : "profile-service-button"
+                                    }
+                                    onClick={() => toggleServiceSelection(service._id)}
+                                    aria-pressed={isActive}
+                                    disabled={savingProfile}
+                                  >
+                                    {service.name}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          ) : (
+                            <p className="profile-services-summary-empty">
+                              No streaming services match "
+                              {serviceSearchQuery}".
+                            </p>
+                          )
+                        ) : (
+                          <p className="profile-services-summary-empty">
+                            Start typing to search the streaming service catalog.
+                          </p>
+                        )}
+                      </>
+                    ) : (
+                      <p className="profile-services-summary-empty">
+                        No streaming services are available yet.
+                      </p>
+                    )}
                     <small className="profile-edit-hint">
                       Pick every platform you actively use so we can personalize your feed.
                     </small>
