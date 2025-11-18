@@ -60,6 +60,13 @@ type AiSuggestion = {
   text: string;
 };
 
+type RecentViewing = {
+  id: string;
+  title: string;
+  rating: number;
+  posterUrl?: string;
+};
+
 // A loose shape for whatever the /circles endpoint returns.
 // We normalize this into the stricter Circle type used in the UI.
 type RawCircleLike = {
@@ -269,6 +276,7 @@ const HomePage: React.FC = () => {
   const [currentUserName, setCurrentUserName] = useState<string | null>(null);
   const [circles, setCircles] = useState<Circle[]>([]);
   const [aiSuggestions] = useState<AiSuggestion[]>(STATIC_AI_SUGGESTIONS);
+  const [recentViewings, setRecentViewings] = useState<RecentViewing[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [commentDrafts, setCommentDrafts] = useState<Record<string, string>>(
@@ -378,6 +386,16 @@ const HomePage: React.FC = () => {
       setIsLoading(false);
     }
 
+    // 2. Soft-fail extra: recent viewings.
+    //    If this 404s in prod we just log it and leave the UI empty
+    //    instead of crashing the main feed.
+    try {
+      const recentData = await apiGet<RecentViewing[]>("/viewings/recent");
+      setRecentViewings(recentData);
+    } catch (err) {
+      console.warn("Failed to load recent viewings (non-fatal)", err);
+      setRecentViewings([]);
+    }
   }, [activeTab, activeService, sortOrder]);
 
   useEffect(() => {
@@ -1308,6 +1326,46 @@ const HomePage: React.FC = () => {
             >
               Open AI Assistant
             </button>
+          </section>
+
+          <section className="rail-card">
+            <header className="rail-card-header">
+              <h2 className="rail-card-title">Recently watched</h2>
+            </header>
+            {recentViewings.length === 0 ? (
+              <p className="rail-empty-text">
+                Start logging what you watch to see it here.
+              </p>
+            ) : (
+              <ul className="rail-recent-viewings-list">
+                {recentViewings.map((v) => (
+                  <li key={v.id} className="rail-recent-viewing-item">
+                    {v.posterUrl && (
+                      <div className="rail-recent-poster">
+                        <img src={v.posterUrl} alt={v.title} />
+                      </div>
+                    )}
+                    <div className="rail-recent-content">
+                      <div className="rail-recent-title">{v.title}</div>
+                      <div className="rail-recent-rating">
+                        {Array.from({ length: 5 }).map((_, i) => (
+                          <span
+                            key={i}
+                            className={
+                              i < v.rating
+                                ? "feed-star feed-star--filled"
+                                : "feed-star"
+                            }
+                          >
+                            ★
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
           </section>
 
           <button
