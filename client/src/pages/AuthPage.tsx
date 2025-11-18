@@ -8,9 +8,9 @@ type Mode = "login" | "signup";
 
 // Point this at your Express server base URL
 // For dev: http://localhost:4000 (or whatever your server runs on)
-// For prod: set VITE_API_URL=https://bfflix.onrender.com
+// For prod: set VITE_API_BASE_URL=https://bfflix.onrender.com
 const API_BASE_URL =
-  import.meta.env.VITE_API_URL ||
+  import.meta.env.VITE_API_BASE_URL ||
   (import.meta.env.DEV ? "http://localhost:8080" : "https://bfflix.onrender.com");
 
 export default function AuthPage() {
