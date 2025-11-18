@@ -1,4 +1,3 @@
-
 // src/pages/AiAssistantPage.tsx
 import React, { useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
@@ -186,6 +185,16 @@ const AiAssistantPage: React.FC = () => {
     }
   };
 
+  const handleLogout = () => {
+    localStorage.removeItem("token");
+    sessionStorage.removeItem("token");
+    localStorage.removeItem("authToken");
+    sessionStorage.removeItem("authToken");
+    localStorage.clear();
+    sessionStorage.clear();
+    navigate("/login");
+  };
+
   return (
     <div className="app-shell">
       <div className="app-main-layout">
@@ -244,7 +253,13 @@ const AiAssistantPage: React.FC = () => {
             </button>
           </nav>
 
-          <button className="app-logout-button">Log out</button>
+          <button
+            className="app-logout-button"
+            type="button"
+            onClick={handleLogout}
+          >
+            Log out
+          </button>
         </aside>
 
         {/* CENTER: AI CHAT */}
