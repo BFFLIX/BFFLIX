@@ -4,6 +4,7 @@ import React, { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import bfflixLogo from "../assets/bfflix-logo.svg";
 import { apiGet, apiPost } from "../lib/api";
+import "../styles/HomePage.css";
 
 // ----------------- Types -----------------
 
@@ -336,7 +337,11 @@ const HomePage: React.FC = () => {
               <span className="app-nav-icon">👥</span>
               <span>Circles</span>
             </button>
-            <button className="app-nav-item">
+            <button
+              className="app-nav-item"
+              type="button"
+              onClick={() => navigate("/viewings")}
+            >
               <span className="app-nav-icon">🎬</span>
               <span>Viewings</span>
             </button>

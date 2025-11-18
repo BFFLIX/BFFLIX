@@ -360,16 +360,16 @@ r.post("/recommendations", requireAuth, async (req: AuthedRequest, res) => {
 
     // 0) Quick classifier: only handle movie/TV/streaming queries
     const classifyPrompt = `
-    You are a classifier for the BFFlix assistant.
+      You are a classifier for the BFFlix assistant.
 
-    Determine if the user's latest message is about movies, TV shows, streaming, watchlists, recommendations, actors, genres, or where to watch something.
-    - If it is about those topics, return: { "isMedia": true }
-    - If it is clearly about something else (homework, coding, life advice, general chat, etc.), return: { "isMedia": false }
+      Determine if the user's latest message is about movies, TV shows, streaming, watchlists, recommendations, actors, genres, or where to watch something.
+      - If it is about those topics, return: { "isMedia": true }
+      - If it is clearly about something else (homework, coding, life advice, general chat, etc.), return: { "isMedia": false }
 
-    Return ONLY a JSON object.
+      Return ONLY a JSON object.
 
-    User message: "${query}"
-    `.trim();
+      User message: "${query}"
+      `.trim();
 
     let isMedia = true;
     try {
@@ -402,11 +402,10 @@ r.post("/recommendations", requireAuth, async (req: AuthedRequest, res) => {
         ],
       });
     }
-    
 
     const isStateless = !conversationId && !(history && history.length);
 
-    // 1) Check cache (now caching *enriched* results so UI is instant) — only for stateless calls
+    // 1) Check cache (caching enriched results) — only for stateless calls
     let cached: any = null;
     if (isStateless) {
       cached = await RecommendationCache.findOne({ userId, query }).lean();
@@ -420,7 +419,7 @@ r.post("/recommendations", requireAuth, async (req: AuthedRequest, res) => {
       }
     }
 
-    // 2) Get recent viewings
+    // 2) Get recent viewings (limit = 10)
     const recentViewings = await Viewing.find({ userId })
       .sort({ watchedAt: -1, _id: -1 })
       .limit(10)
@@ -443,17 +442,25 @@ r.post("/recommendations", requireAuth, async (req: AuthedRequest, res) => {
       )
     );
 
-    // 4) Fallback path if no history
+    // 4) Fallback path if no history at all
     if (recentViewings.length === 0) {
       const fallbackPrompt = `
-The user has no recent viewing history.
-Ask one short follow-up question (1–2 sentences). Offer two options:
-1) "Want the current most popular movies people are watching across all platforms?"
-2) "Prefer a top list by a specific genre you like (for example comedy, sci fi, drama)?"
-If applicable, mention their platforms: ${platformNames.join(", ") || "none set"}.
-Return JSON object:
-{ "type": "conversation", "message": "string" }
-`.trim();
+  You are the BFFlix assistant.
+
+  The user has no viewing history recorded yet, so keep the tone warm and conversational.
+
+  Write one short, friendly message (1–2 sentences) that:
+  - Explains you have not logged anything they have watched yet.
+  - Asks one clear follow-up question.
+  - Offers two options, phrased naturally, for what they would like next:
+    1) Getting a few of the most popular movies or shows people are watching right now.
+    2) Getting a short list based on a genre they like (for example comedy, sci fi, drama).
+
+  If applicable, you may casually mention their platforms: ${platformNames.join(", ") || "no streaming services saved yet"}.
+
+  Return JSON object:
+  { "type": "conversation", "message": "string" }
+  `.trim();
 
       const fallback = await askLLMJson(fallbackPrompt);
 
@@ -464,25 +471,70 @@ Return JSON object:
             ? { type: "conversation", message: fallback }
             : fallback || {
                 type: "conversation",
-                message: "Want trending now or a top list by genre?",
+                message:
+                  "I don’t see anything in your history yet. Want trending picks or a short list by genre?",
               },
         ],
       });
     }
 
-    // 5) Build a compact user profile from viewings
-    const userProfile = recentViewings
-      .map((v) => {
-        const parts: string[] = [];
-        parts.push(`${v.type === "tv" ? "TV Show" : "Movie"} id ${v.tmdbId}`);
-        if (v.seasonNumber != null && v.episodeNumber != null) {
-          parts.push(`S${v.seasonNumber}E${v.episodeNumber}`);
+    // 5) Build an enriched user profile from viewings using TMDB titles
+    const profileLines = await Promise.all(
+      recentViewings.map(async (v) => {
+        try {
+          const isTv = v.type === "tv";
+          const details = isTv
+            ? await tmdb.getTVDetails(Number(v.tmdbId)).catch(() => null)
+            : await tmdb.getMovieDetails(Number(v.tmdbId)).catch(() => null);
+
+          const title =
+            details?.title ||
+            details?.name ||
+            `TMDB id ${String(v.tmdbId)}`;
+          const year =
+            (details?.release_date || details?.first_air_date || "").slice(
+              0,
+              4
+            ) || null;
+
+          const parts: string[] = [];
+          parts.push(
+            `${isTv ? "TV Show" : "Movie"}: ${title}${
+              year ? ` (${year})` : ""
+            }`
+          );
+
+          if (v.seasonNumber != null && v.episodeNumber != null) {
+            parts.push(`season ${v.seasonNumber}, episode ${v.episodeNumber}`);
+          }
+          if (v.rating != null) {
+            parts.push(`rated ${v.rating}/5`);
+          }
+          if (v.comment) {
+            parts.push(
+              `comment "${String(v.comment).replace(/"/g, "'")}"`
+            );
+          }
+
+          return parts.join(", ");
+        } catch {
+          // Fallback if TMDB fails
+          const parts: string[] = [];
+          parts.push(
+            `${v.type === "tv" ? "TV Show" : "Movie"} id ${String(v.tmdbId)}`
+          );
+          if (v.rating != null) parts.push(`rated ${v.rating}/5`);
+          if (v.comment) {
+            parts.push(
+              `comment "${String(v.comment).replace(/"/g, "'")}"`
+            );
+          }
+          return parts.join(", ");
         }
-        if (v.rating != null) parts.push(`rated ${v.rating}/5`);
-        if (v.comment) parts.push(`comment "${String(v.comment).replace(/"/g, "'")}"`);
-        return parts.join(", ");
       })
-      .join("; ");
+    );
+
+    const userProfile = profileLines.filter(Boolean).join("; ");
 
     // 6) Compose LLM prompt with platforms + profile + optional conversation history
     const historyBlock =
@@ -497,26 +549,47 @@ Return JSON object:
         : "";
 
     const llmPrompt = `
-You are the AI movie assistant for BFFlix.
+  You are the AI movie assistant for BFFlix. Talk like a friendly human, not a robot.
 
-User platforms (prefer titles likely available here): ${platformNames.join(", ") || "none set"}.
+  User platforms (prefer titles likely available here when it makes sense): ${
+    platformNames.join(", ") || "none set"
+  }.
 
-Recent viewing history (most recent first):
-${userProfile || "No recent titles recorded."}
+  Recent viewing history (most recent first):
+  ${userProfile || "No recent titles recorded."}
 
-${historyBlock}User's latest message: "${query}"
+  ${historyBlock}User's latest message: "${query}"
 
-Task:
-- Treat this as a continuation of the conversation above if history is present.
-- If the user says things like "I don't like those", "what about this movie?", "got anything lighter?", or "none of those work", you must ADAPT the recommendations based on the prior list and their feedback.
-- Do NOT just repeat the same list as before.
-- You may briefly reference previous suggestions (e.g., "Instead of X and Y, here are some alternatives...").
+  Your goals:
+  1) Treat this as a real conversation, especially if prior history exists.
+  2) Lean heavily on the viewing history above to understand the user's taste:
+     - What genres and tones they like.
+     - Whether they gravitate toward modern or older titles.
+     - Whether they like high-energy action, light rom coms, darker stories, etc.
+  3) Use their platforms when helpful, but do not force it for every title.
 
-Return ONLY a JSON array with items like:
-[
-  { "title": "string", "type": "movie" | "tv", "reason": "string", "matchScore": number }
-]
-`.trim();
+  When you recommend titles:
+  - For the **first recommendation only**, start the **reason** with a short conversational intro that directly responds to the user's latest message. For example:
+    - "A rom com with some action is a fun mood, so first up..."
+    - "Since you're asking for something lighter than what you've watched recently..."
+  - For at least the first **two** items, explicitly connect the recommendation to their viewing history by name, for example:
+    - "Because you loved The Matrix..."
+    - "Since you rated Anyone But You so highly..."
+  - If the user says things like "I don't like those", "what about this movie?", "got anything lighter?", or "none of those work", you must ADAPT the new list so it clearly reacts to that feedback. Do NOT repeat the same style of list.
+
+  Style:
+  - Imagine you are texting a friend about what to watch.
+  - Keep each reason to 1–2 short, conversational sentences.
+  - Vary sentence structure and wording so the reasons do not sound templated.
+  - Avoid repeating the same stock phrase like "Since you liked..." for every item.
+  - Avoid extremely generic phrases like "This movie is about..." at the start of every reason.
+
+  Output format:
+  Return ONLY a JSON array with items like:
+  [
+    { "title": "string", "type": "movie" | "tv", "reason": "string", "matchScore": number }
+  ]
+  `.trim();
 
     // 6.1) Pull popular items from the user's circles to bias/merge with AI output
     const feedCandidates = await getFeedTopCandidates(userId, 30, limit * 2);
@@ -527,24 +600,42 @@ Return ONLY a JSON array with items like:
     const trimmed = llmArray.slice(0, limit);
 
     // Build arrays separately
-    const aiCandidates: Array<{ title: string; type?: "movie" | "tv"; reason?: string; matchScore?: number }> = [];
+    const aiCandidates: Array<{
+      title: string;
+      type?: "movie" | "tv";
+      reason?: string;
+      matchScore?: number;
+    }> = [];
     for (const it of trimmed) {
-      const payload: { title: string; type?: "movie" | "tv"; reason?: string; matchScore?: number } = {
-        title: String(it?.title || "")
+      const payload: {
+        title: string;
+        type?: "movie" | "tv";
+        reason?: string;
+        matchScore?: number;
+      } = {
+        title: String(it?.title || ""),
       };
       if (it?.type === "tv" || it?.type === "movie") payload.type = it.type;
       if (typeof it?.reason === "string") payload.reason = it.reason;
       if (typeof it?.matchScore === "number") payload.matchScore = it.matchScore;
       aiCandidates.push(payload);
     }
+
     const feedIdCandidates: Array<{ tmdbId: string; type: "movie" | "tv" }> =
-      feedCandidates.map(f => ({ tmdbId: f.tmdbId, type: f.type }));
+      feedCandidates.map((f) => ({ tmdbId: f.tmdbId, type: f.type }));
 
     // Order depends on preferFeed
-    const merged: Array<{ title?: string; type?: "movie" | "tv"; reason?: string; matchScore?: number; tmdbId?: string }> =
-      preferFeed ? [...feedIdCandidates, ...aiCandidates] : [...aiCandidates, ...feedIdCandidates];
+    const merged: Array<{
+      title?: string;
+      type?: "movie" | "tv";
+      reason?: string;
+      matchScore?: number;
+      tmdbId?: string;
+    }> = preferFeed
+      ? [...feedIdCandidates, ...aiCandidates]
+      : [...aiCandidates, ...feedIdCandidates];
 
-    // Enrich all candidates:
+    // 8) Enrich all candidates:
     //  - If we have a title (AI), resolve via search and enrich
     //  - If we already have tmdbId+type (feed), enrich directly without search
     const enriched = (
@@ -552,11 +643,20 @@ Return ONLY a JSON array with items like:
         merged.map(async (cand) => {
           if (cand.tmdbId && cand.type) {
             // direct enrich from known id/type
-            const providers = await getPlayableServicesForTitle(cand.type, cand.tmdbId, "US");
+            const providers = await getPlayableServicesForTitle(
+              cand.type,
+              cand.tmdbId,
+              "US"
+            );
             const playableOn = intersect(providers, userServices);
-            const details = cand.type === "movie"
-              ? await tmdb.getMovieDetails(Number(cand.tmdbId)).catch(() => null)
-              : await tmdb.getTVDetails(Number(cand.tmdbId)).catch(() => null);
+            const details =
+              cand.type === "movie"
+                ? await tmdb
+                    .getMovieDetails(Number(cand.tmdbId))
+                    .catch(() => null)
+                : await tmdb
+                    .getTVDetails(Number(cand.tmdbId))
+                    .catch(() => null);
 
             if (!details) return null;
 
@@ -564,15 +664,25 @@ Return ONLY a JSON array with items like:
             return {
               tmdbId: String(details.id),
               type: cand.type,
-              title: cand.type === "movie" ? (details.title || details.name) : (details.name || details.title),
-              year: (details.release_date || details.first_air_date || "").slice(0, 4) || null,
+              title:
+                cand.type === "movie"
+                  ? details.title || details.name
+                  : details.name || details.title,
+              year:
+                (details.release_date || details.first_air_date || "").slice(
+                  0,
+                  4
+                ) || null,
               overview: details.overview ?? null,
               poster,
               providers,
               playableOnMyServices: playableOn.length > 0,
               playableOn,
               reason: cand.reason ?? null,
-              matchScore: typeof cand.matchScore === "number" ? cand.matchScore : null,
+              matchScore:
+                typeof cand.matchScore === "number"
+                  ? cand.matchScore
+                  : null,
               popularity: details.popularity ?? null,
               voteAverage: details.vote_average ?? null,
             };
@@ -580,8 +690,12 @@ Return ONLY a JSON array with items like:
             const input = {
               title: cand.title as string,
               ...(cand.type ? { type: cand.type as "movie" | "tv" } : {}),
-              ...(typeof cand.reason === "string" ? { reason: cand.reason } : {}),
-              ...(typeof cand.matchScore === "number" ? { matchScore: cand.matchScore } : {}),
+              ...(typeof cand.reason === "string"
+                ? { reason: cand.reason }
+                : {}),
+              ...(typeof cand.matchScore === "number"
+                ? { matchScore: cand.matchScore }
+                : {}),
             };
             return resolveAndEnrich(input, userServices).catch(() => null);
           }
@@ -611,7 +725,11 @@ Return ONLY a JSON array with items like:
         basedOn: recentViewings.length,
         platforms: platformNames,
         results: [
-          { type: "conversation", message: "I couldn't resolve those picks. Want trending or a genre top list?" }
+          {
+            type: "conversation",
+            message:
+              "I couldn't resolve those picks. Want trending suggestions or a short list by genre instead?",
+          },
         ],
       });
     }

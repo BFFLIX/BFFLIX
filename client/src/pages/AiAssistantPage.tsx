@@ -51,7 +51,7 @@ const AiAssistantPage: React.FC = () => {
       role: "assistant",
       createdAt: new Date().toISOString(),
       content:
-        "Hey there! 👋 I'm your BFFlix AI assistant. I can help you discover movies and shows, get recommendations, answer questions about your watchlist, and chat about anything entertainment-related. What would you like to know?",
+        "Hey there! 👋 I'm your BFFlix AI assistant. I can help you discover movies and shows, get recommendations, look at your past viewings, and chat about anything entertainment-related. What are you in the mood for?",
     },
   ]);
 
@@ -108,22 +108,29 @@ const AiAssistantPage: React.FC = () => {
         };
         setMessages((prev) => [...prev, assistantMessage]);
       } else if (data.results && data.results.length > 0) {
-        // Otherwise format the recs into a single assistant bubble
-        const lines = data.results.map((r, idx) => {
-          if ("type" in r && (r.type === "movie" || r.type === "tv")) {
-            const titleLine = `${idx + 1}. ${r.title}${
-              r.year ? ` (${r.year})` : ""
-            } – ${r.type === "movie" ? "Movie" : "TV"}`;
-            const reasonLine = r.reason ? `   Why: ${r.reason}` : "";
-            const whereLine =
-              r.playableOn && r.playableOn.length
-                ? `   Where: ${r.playableOn.join(", ")}`
-                : "";
-            return [titleLine, reasonLine, whereLine]
-              .filter(Boolean)
-              .join("\n");
-          }
-          return "";
+        // ✅ More conversational formatter for recs
+        const recs = data.results.filter(
+          (r): r is Extract<AgentRecommendationResult, { type: "movie" | "tv" }> =>
+            r.type === "movie" || r.type === "tv"
+        );
+
+        const recLines = recs.map((r, idx) => {
+          const header =
+            idx === 0
+              ? `First up: ${r.title}${
+                  r.year ? ` (${r.year})` : ""
+                } ${r.type === "movie" ? "– Movie" : "– TV"}`
+              : `${idx + 1}. ${r.title}${
+                  r.year ? ` (${r.year})` : ""
+                } ${r.type === "movie" ? "– Movie" : "– TV"}`;
+
+          const reason = r.reason ? r.reason.trim() : "";
+          const where =
+            r.playableOn && r.playableOn.length
+              ? `You can watch it on ${r.playableOn.join(", ")}.`
+              : "";
+
+          return [header, reason, where].filter(Boolean).join("\n\n");
         });
 
         const assistantMessage: ChatMessage = {
@@ -131,8 +138,11 @@ const AiAssistantPage: React.FC = () => {
           role: "assistant",
           createdAt: now,
           content:
-            lines.filter(Boolean).join("\n\n") ||
-            "Here are some picks I found based on what you said.",
+            recLines.length > 0
+              ? `Here are a few things I think you'd vibe with:\n\n${recLines.join(
+                  "\n\n"
+                )}`
+              : "Here are some picks I found based on what you said.",
         };
 
         setMessages((prev) => [...prev, assistantMessage]);
@@ -201,7 +211,11 @@ const AiAssistantPage: React.FC = () => {
               <span className="app-nav-icon">👥</span>
               <span>Circles</span>
             </button>
-            <button className="app-nav-item">
+            <button
+              className="app-nav-item"
+              type="button"
+              onClick={() => navigate("/viewings")}
+            >
               <span className="app-nav-icon">🎬</span>
               <span>Viewings</span>
             </button>
