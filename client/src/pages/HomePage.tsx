@@ -315,7 +315,7 @@ const HomePage: React.FC = () => {
   };
 
   // ----------------- Render -----------------
-
+  //comment
   return (
     <div className="app-shell">
       <header className="app-topbar">
