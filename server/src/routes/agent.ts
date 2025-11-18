@@ -14,6 +14,38 @@ import Circle from "../models/Circles/Circle";
 
 const r = Router();
 
+/**
+ * Simple suggestions for the Home sidebar "AI Recommendations" chips.
+ * These are just static prompts, but we keep them behind auth so they
+ * stay consistent with the rest of the app.
+ */
+r.get("/suggestions", requireAuth, (_req, res) => {
+  const suggestions = [
+    {
+      id: "based-on-viewings",
+      text: "Recommend something based on my past viewings",
+    },
+    {
+      id: "romcom-action",
+      text: "I want a romantic comedy with some action",
+    },
+    {
+      id: "comfort-show",
+      text: "Give me a cozy comfort show to binge",
+    },
+    {
+      id: "with-friends",
+      text: "What should I watch with friends tonight?",
+    },
+    {
+      id: "hidden-gems",
+      text: "Show me some hidden gems I may have missed",
+    },
+  ];
+
+  res.json(suggestions);
+});
+
 const bodySchema = z.object({
   query: z.string().min(1, "Query is required"),
   limit: z.coerce.number().int().min(1).max(10).optional().default(5), // optional cap for UI

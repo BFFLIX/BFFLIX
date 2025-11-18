@@ -8,9 +8,16 @@ FROM node:20-alpine AS build
 
 WORKDIR /app
 
-# Capture API URL at build time so Vite can inline it
-ARG VITE_API_URL
-ENV VITE_API_URL=${VITE_API_URL}
+# Capture Vite env variables at build time so Vite can inline them
+# These names MUST match what your React code uses:
+# - import.meta.env.VITE_API_BASE_URL
+# - import.meta.env.VITE_TMDB_API_KEY
+ARG VITE_API_BASE_URL
+ARG VITE_TMDB_API_KEY
+
+# Expose them as real env vars for the Vite build
+ENV VITE_API_BASE_URL=${VITE_API_BASE_URL}
+ENV VITE_TMDB_API_KEY=${VITE_TMDB_API_KEY}
 
 # Install dependencies separately for better caching
 COPY package.json package-lock.json ./

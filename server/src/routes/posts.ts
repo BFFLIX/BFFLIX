@@ -8,6 +8,7 @@ import Circle from "../models/Circles/Circle";
 import { requireAuth, AuthedRequest } from "../middleware/auth";
 import { validateBody, validateQuery, validateParams } from "../middleware/validate";
 import { asyncHandler } from "../middleware/asyncHandler";
+import Viewing from "../models/Viewing";
 
 const r = Router();
 
@@ -73,6 +74,23 @@ r.post(
       seasonNumber,
       episodeNumber,
     });
+
+    // Also create a viewing for the author so it appears in past viewings
+    try {
+      await Viewing.create({
+        userId: req.user!.id,
+        type,
+        tmdbId,
+        rating,
+        comment,
+        watchedAt,
+        seasonNumber,
+        episodeNumber,
+      });
+    } catch (err) {
+      console.warn("Failed to record viewing for post", err);
+      // Do not fail the post creation if viewing creation fails
+    }
 
     res.status(201).json({ id: post.id });
   })

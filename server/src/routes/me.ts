@@ -12,18 +12,40 @@ r.get("/", requireAuth, async (req: AuthedRequest, res) => {
   res.json(user);
 });
 
+const avatarDataUrlPattern =
+  /^data:image\/(png|jpe?g|gif|webp|bmp);base64,[a-z0-9+/=]+$/i;
+
 const updateSchema = z.object({
   name: z.string().min(1).optional(),
-  services: z.array(z.enum(SERVICES as unknown as [Service, ...Service[]])).optional(),
+  avatarUrl: z
+    .union([
+      //custom pfp pics lets freaking go
+      z.string().url(),
+      z.literal(""),
+      z
+        .string()
+        .regex(avatarDataUrlPattern, "Avatar must be a PNG/JPEG/GIF/WEBP/BMP image"),
+    ])
+    .optional(),
+  services: z
+    .array(z.enum(SERVICES as unknown as [Service, ...Service[]]))
+    .optional(),
 });
 
 r.patch("/", requireAuth, async (req: AuthedRequest, res) => {
   const parsed = updateSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json(parsed.error.format());
 
+  const updateData = { ...parsed.data } as any;
+  if (Object.prototype.hasOwnProperty.call(updateData, "avatarUrl")) {
+    if (!updateData.avatarUrl) {
+      updateData.avatarUrl = "";
+    }
+  }
+
   const updated = await User.findByIdAndUpdate(
     req.user!.id,
-    parsed.data,
+    updateData,
     { new: true, runValidators: true, select: "-passwordHash" }
   ).lean();
 

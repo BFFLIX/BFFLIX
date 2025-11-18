@@ -4,8 +4,7 @@ import React, { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import bfflixLogo from "../assets/bfflix-logo.svg";
 import defaultProfile from "../assets/default-profile.png";
-import { apiGet, apiPost } from "../lib/api";
-import { apiGet as apiGetUser } from "../lib/api";
+import { apiGet, apiPost, apiDelete } from "../lib/api";
 import "../styles/HomePage.css";
 
 // ----------------- Types -----------------
@@ -26,6 +25,7 @@ type ServiceTag =
 
 type FeedPost = {
   _id: string;
+  authorId?: string;
   authorName: string;
   authorAvatarUrl?: string;
   circleNames: string[];
@@ -33,12 +33,27 @@ type FeedPost = {
   title: string;
   year?: number;
   type: "Movie" | "Show";
+  mediaType?: "movie" | "tv";
+  tmdbId?: string;
   rating: number;
   body: string;
   services: ServiceTag[];
   likeCount: number;
   commentCount: number;
+  likedByMe?: boolean;
   imageUrl?: string;
+};
+
+type FeedResponse = {
+  items: FeedPost[];
+  nextCursor?: string | null;
+};
+
+type FeedComment = {
+  id: string;
+  userId: string;
+  text: string;
+  createdAt: string;
 };
 
 type AiSuggestion = {
@@ -46,11 +61,308 @@ type AiSuggestion = {
   text: string;
 };
 
-type RecentViewing = {
-  id: string;
-  title: string;
-  rating: number;
-  posterUrl?: string;
+// A loose shape for whatever the /circles endpoint returns.
+// We normalize this into the stricter Circle type used in the UI.
+type RawCircleLike = {
+  _id?: string;
+  id?: string;
+  circleId?: string;
+  name?: string;
+  memberCount?: number;
+  membersCount?: number;
+  circle?: RawCircleLike;
+  memberships?: RawCircleLike[];
+  circles?: RawCircleLike[];
+  items?: RawCircleLike[];
+  data?: RawCircleLike[];
+  [key: string]: any;
+};
+
+const normalizeCircles = (payload: RawCircleLike | RawCircleLike[] | null | undefined): Circle[] => {
+  if (!payload) return [];
+
+  let list: RawCircleLike[] = [];
+
+  // Common shapes we might see from the backend
+  if (Array.isArray(payload)) {
+    list = payload;
+  } else if (Array.isArray(payload.items)) {
+    list = payload.items;
+  } else if (Array.isArray(payload.memberships)) {
+    list = payload.memberships;
+  } else if (Array.isArray(payload.circles)) {
+    list = payload.circles;
+  } else if (Array.isArray(payload.data)) {
+    list = payload.data;
+  } else {
+    // Fallback: maybe it is a single circle-like object
+    list = [payload];
+  }
+
+  const seen = new Set<string>();
+  const result: Circle[] = [];
+
+  for (const entry of list) {
+    const base = (entry.circle as RawCircleLike) || entry;
+
+    const id =
+      (base._id as string | undefined) ||
+      (base.id as string | undefined) ||
+      (base.circleId as string | undefined);
+
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+
+    result.push({
+      _id: id,
+      name: (base.name as string | undefined) || "Untitled circle",
+      memberCount:
+        typeof base.memberCount === "number"
+          ? base.memberCount
+          : typeof base.membersCount === "number"
+          ? base.membersCount
+          : 0,
+    });
+  }
+
+  return result;
+};
+
+// Normalize whatever the feed endpoint returns into the stricter FeedPost shape
+const normalizeFeedItems = (items: any[], circlesLookup: Map<string, string>): FeedPost[] => {
+  return (items || []).map((raw, idx) => {
+    const id =
+      (raw && (raw.id || raw._id || raw.canonicalId)) ||
+      `tmp-${idx}-${Date.now()}`;
+
+    const circleIds: string[] = Array.isArray(raw?.circles)
+      ? raw.circles.map((c: any) => String(c))
+      : Array.isArray(raw?.circleIds)
+      ? raw.circleIds.map((c: any) => String(c))
+      : [];
+
+    const circleNames =
+      Array.isArray(raw?.circleNames) && raw.circleNames.length
+        ? raw.circleNames
+        : circleIds
+            .map((cid) => circlesLookup.get(cid))
+            .filter((n): n is string => Boolean(n));
+
+    const body =
+      (typeof raw?.body === "string" && raw.body) ||
+      (typeof raw?.comment === "string" && raw.comment) ||
+      "";
+
+    const services: string[] = Array.isArray(raw?.services)
+      ? raw.services
+      : Array.isArray(raw?.playableOnMyServices)
+      ? raw.playableOnMyServices
+      : Array.isArray(raw?.availableOn)
+      ? raw.availableOn
+      : [];
+
+    const createdAt =
+      typeof raw?.createdAt === "string"
+        ? raw.createdAt
+        : typeof raw?.createdAt === "number"
+        ? new Date(raw.createdAt).toISOString()
+        : new Date().toISOString();
+
+    return {
+      _id: String(id),
+      authorId: raw?.authorId ? String(raw.authorId) : undefined,
+      authorName:
+        (raw?.authorName as string) ||
+        (raw?.author as string) ||
+        (raw?.authorId as string) ||
+        "Someone",
+      authorAvatarUrl: raw?.authorAvatarUrl as string | undefined,
+      circleNames,
+      createdAt,
+      title:
+        (raw?.title as string) ||
+        (raw?.name as string) ||
+        (raw?.tmdbTitle as string) ||
+        "Untitled",
+      year:
+        typeof raw?.year === "number"
+          ? raw.year
+          : raw?.watchedAt
+          ? Number(String(raw.watchedAt).slice(0, 4))
+          : undefined,
+      type:
+        raw?.type === "tv" || raw?.type === "tv_show" || raw?.type === "Show"
+          ? "Show"
+          : "Movie",
+      mediaType:
+        raw?.type === "tv" || raw?.type === "tv_show" || raw?.type === "Show"
+          ? "tv"
+          : "movie",
+      tmdbId: raw?.tmdbId ? String(raw.tmdbId) : undefined,
+      rating: typeof raw?.rating === "number" ? raw.rating : 0,
+      body,
+      services: services as any,
+      likeCount: typeof raw?.likeCount === "number" ? raw.likeCount : 0,
+      commentCount:
+        typeof raw?.commentCount === "number" ? raw.commentCount : 0,
+      likedByMe: !!raw?.likedByMe,
+      imageUrl:
+        (raw?.imageUrl as string | undefined) ||
+        (raw?.posterUrl as string | undefined),
+    };
+  });
+};
+
+// A loose shape for whatever the /circles endpoint returns.
+// We normalize this into the stricter Circle type used in the UI.
+type RawCircleLike = {
+  _id?: string;
+  id?: string;
+  circleId?: string;
+  name?: string;
+  memberCount?: number;
+  membersCount?: number;
+  circle?: RawCircleLike;
+  memberships?: RawCircleLike[];
+  circles?: RawCircleLike[];
+  items?: RawCircleLike[];
+  data?: RawCircleLike[];
+  [key: string]: any;
+};
+
+const normalizeCircles = (payload: RawCircleLike | RawCircleLike[] | null | undefined): Circle[] => {
+  if (!payload) return [];
+
+  let list: RawCircleLike[] = [];
+
+  // Common shapes we might see from the backend
+  if (Array.isArray(payload)) {
+    list = payload;
+  } else if (Array.isArray(payload.items)) {
+    list = payload.items;
+  } else if (Array.isArray(payload.memberships)) {
+    list = payload.memberships;
+  } else if (Array.isArray(payload.circles)) {
+    list = payload.circles;
+  } else if (Array.isArray(payload.data)) {
+    list = payload.data;
+  } else {
+    // Fallback: maybe it is a single circle-like object
+    list = [payload];
+  }
+
+  const seen = new Set<string>();
+  const result: Circle[] = [];
+
+  for (const entry of list) {
+    const base = (entry.circle as RawCircleLike) || entry;
+
+    const id =
+      (base._id as string | undefined) ||
+      (base.id as string | undefined) ||
+      (base.circleId as string | undefined);
+
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+
+    result.push({
+      _id: id,
+      name: (base.name as string | undefined) || "Untitled circle",
+      memberCount:
+        typeof base.memberCount === "number"
+          ? base.memberCount
+          : typeof base.membersCount === "number"
+          ? base.membersCount
+          : 0,
+    });
+  }
+
+  return result;
+};
+
+// Normalize whatever the feed endpoint returns into the stricter FeedPost shape
+const normalizeFeedItems = (items: any[], circlesLookup: Map<string, string>): FeedPost[] => {
+  return (items || []).map((raw, idx) => {
+    const id =
+      (raw && (raw.id || raw._id || raw.canonicalId)) ||
+      `tmp-${idx}-${Date.now()}`;
+
+    const circleIds: string[] = Array.isArray(raw?.circles)
+      ? raw.circles.map((c: any) => String(c))
+      : Array.isArray(raw?.circleIds)
+      ? raw.circleIds.map((c: any) => String(c))
+      : [];
+
+    const circleNames =
+      Array.isArray(raw?.circleNames) && raw.circleNames.length
+        ? raw.circleNames
+        : circleIds
+            .map((cid) => circlesLookup.get(cid))
+            .filter((n): n is string => Boolean(n));
+
+    const body =
+      (typeof raw?.body === "string" && raw.body) ||
+      (typeof raw?.comment === "string" && raw.comment) ||
+      "";
+
+    const services: string[] = Array.isArray(raw?.services)
+      ? raw.services
+      : Array.isArray(raw?.playableOnMyServices)
+      ? raw.playableOnMyServices
+      : Array.isArray(raw?.availableOn)
+      ? raw.availableOn
+      : [];
+
+    const createdAt =
+      typeof raw?.createdAt === "string"
+        ? raw.createdAt
+        : typeof raw?.createdAt === "number"
+        ? new Date(raw.createdAt).toISOString()
+        : new Date().toISOString();
+
+    return {
+      _id: String(id),
+      authorId: raw?.authorId ? String(raw.authorId) : undefined,
+      authorName:
+        (raw?.authorName as string) ||
+        (raw?.author as string) ||
+        (raw?.authorId as string) ||
+        "Someone",
+      authorAvatarUrl: raw?.authorAvatarUrl as string | undefined,
+      circleNames,
+      createdAt,
+      title:
+        (raw?.title as string) ||
+        (raw?.name as string) ||
+        (raw?.tmdbTitle as string) ||
+        "Untitled",
+      year:
+        typeof raw?.year === "number"
+          ? raw.year
+          : raw?.watchedAt
+          ? Number(String(raw.watchedAt).slice(0, 4))
+          : undefined,
+      type:
+        raw?.type === "tv" || raw?.type === "tv_show" || raw?.type === "Show"
+          ? "Show"
+          : "Movie",
+      mediaType:
+        raw?.type === "tv" || raw?.type === "tv_show" || raw?.type === "Show"
+          ? "tv"
+          : "movie",
+      tmdbId: raw?.tmdbId ? String(raw.tmdbId) : undefined,
+      rating: typeof raw?.rating === "number" ? raw.rating : 0,
+      body,
+      services: services as any,
+      likeCount: typeof raw?.likeCount === "number" ? raw.likeCount : 0,
+      commentCount:
+        typeof raw?.commentCount === "number" ? raw.commentCount : 0,
+      likedByMe: !!raw?.likedByMe,
+      imageUrl:
+        (raw?.imageUrl as string | undefined) ||
+        (raw?.posterUrl as string | undefined),
+    };
+  });
 };
 
 // TMDB search result (simplified)
@@ -69,6 +381,31 @@ type SelectedTitle = {
   label: string;
 };
 
+// ----------------- Static AI suggestions -----------------
+
+const STATIC_AI_SUGGESTIONS: AiSuggestion[] = [
+  {
+    id: "based-on-history",
+    text: "Recommend something based on my past viewings",
+  },
+  {
+    id: "romcom-action",
+    text: "I want a romantic comedy with some action",
+  },
+  {
+    id: "comfort-binge",
+    text: "Give me a cozy comfort show to binge",
+  },
+  {
+    id: "friends-night",
+    text: "What should I watch with friends tonight?",
+  },
+  {
+    id: "hidden-gems",
+    text: "Show me some hidden gems I may have missed",
+  },
+];
+
 // ----------------- Component -----------------
 
 const HomePage: React.FC = () => {
@@ -77,14 +414,30 @@ const HomePage: React.FC = () => {
   const [activeService, setActiveService] = useState<
     ServiceTag | "All services"
   >("All services");
-  const [sortOrder, setSortOrder] = useState<"newest" | "top">("newest");
+  // Backend expects "latest" or "smart"
+  const [sortOrder, setSortOrder] = useState<"latest" | "smart">("latest");
 
   const [posts, setPosts] = useState<FeedPost[]>([]);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [currentUserName, setCurrentUserName] = useState<string | null>(null);
   const [circles, setCircles] = useState<Circle[]>([]);
-  const [aiSuggestions, setAiSuggestions] = useState<AiSuggestion[]>([]);
-  const [recentViewings, setRecentViewings] = useState<RecentViewing[]>([]);
+  const [aiSuggestions] = useState<AiSuggestion[]>(STATIC_AI_SUGGESTIONS);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [commentDrafts, setCommentDrafts] = useState<Record<string, string>>(
+    {}
+  );
+  const [commentSubmitting, setCommentSubmitting] = useState<
+    Record<string, boolean>
+  >({});
+  const [viewingSaving, setViewingSaving] = useState<Record<string, boolean>>(
+    {}
+  );
+  const [openComments, setOpenComments] = useState<Record<string, boolean>>({});
+  const [comments, setComments] = useState<Record<string, FeedComment[]>>({});
+  const [commentsLoading, setCommentsLoading] = useState<
+    Record<string, boolean>
+  >({});
 
   // ----------------- Create Post state -----------------
 
@@ -109,17 +462,19 @@ const HomePage: React.FC = () => {
   const [isSubmittingPost, setIsSubmittingPost] = useState(false);
   const [postError, setPostError] = useState<string | null>(null);
 
-  // ----------------- Data loading -----------------
+    // ----------------- Data loading -----------------
 
   const [me, setMe] = useState<any>(null);
 
   const fetchAll = useCallback(async () => {
-    try {
-      setIsLoading(true);
-      setError(null);
+    setIsLoading(true);
+    setError(null);
 
-      const [feedData, circlesData, aiData, recentData] = await Promise.all([
-        apiGet<FeedPost[]>(
+    try {
+      // Run feed + circles in parallel but handle failures independently so
+      // circles still show up in the create-post modal even if the feed errors.
+      const [feedResult, circlesResult] = await Promise.allSettled([
+        apiGet<FeedResponse>(
           `/feed?scope=${encodeURIComponent(
             activeTab
           )}&sort=${encodeURIComponent(sortOrder)}${
@@ -128,31 +483,79 @@ const HomePage: React.FC = () => {
               : `&service=${encodeURIComponent(activeService)}`
           }`
         ),
-        apiGet<Circle[]>("/circles"),
-        apiGet<AiSuggestion[]>("/ai/suggestions"),
-        apiGet<RecentViewing[]>("/viewings/recent"),
+        apiGet<any>("/circles"),
       ]);
 
-      setPosts(feedData);
-      setCircles(circlesData);
-      setAiSuggestions(aiData);
-      setRecentViewings(recentData);
-    } catch (err) {
-      console.error("Error loading home data", err);
-      if (err instanceof Error) {
-        setError(err.message);
+      let refreshedCircles = circles;
+      if (feedResult.status === "fulfilled") {
+        const feedData = feedResult.value;
+        const circleMap = new Map(
+          refreshedCircles.map((c) => [c._id, c.name] as [string, string])
+        );
+        const normalized = normalizeFeedItems(
+          Array.isArray(feedData?.items) ? feedData.items : [],
+          circleMap
+        );
+        setPosts(normalized);
       } else {
-        setError("Failed to load your BFFlix feed. Please try again.");
+        const err = feedResult.reason;
+        console.error("Feed load error", err);
+        setError(
+          err instanceof Error
+            ? err.message
+            : "Failed to load your BFFlix feed. Please try again."
+        );
+        setPosts([]);
+      }
+
+      if (circlesResult.status === "fulfilled") {
+        refreshedCircles = normalizeCircles(circlesResult.value);
+        setCircles(refreshedCircles);
+      } else {
+        console.error("Circles load error", circlesResult.reason);
+        refreshedCircles = [];
+        setCircles([]);
+      }
+
+      // Re-normalize posts once we know the circle names
+      if (feedResult.status === "fulfilled") {
+        const feedData = feedResult.value;
+        const circleMap = new Map(
+          refreshedCircles.map((c) => [c._id, c.name] as [string, string])
+        );
+        const normalized = normalizeFeedItems(
+          Array.isArray(feedData?.items) ? feedData.items : [],
+          circleMap
+        );
+        setPosts(normalized);
       }
     } finally {
       setIsLoading(false);
     }
+
   }, [activeTab, activeService, sortOrder]);
 
   useEffect(() => {
     fetchAll();
     apiGetUser("/me").then(setMe);
   }, [fetchAll]);
+
+  // Load current user id once for author-only actions
+  useEffect(() => {
+    (async () => {
+      try {
+        const me = await apiGet<any>("/me");
+        if (me?.id || me?._id) {
+          setCurrentUserId(String(me.id || me._id));
+        }
+        if (me?.name) {
+          setCurrentUserName(me.name as string);
+        }
+      } catch (err) {
+        console.warn("Failed to load /me for current user id", err);
+      }
+    })();
+  }, []);
 
   // ----------------- Helpers -----------------
 
@@ -200,6 +603,135 @@ const HomePage: React.FC = () => {
     setSelectedCircleIds((prev) =>
       prev.includes(id) ? prev.filter((c) => c !== id) : [...prev, id]
     );
+  };
+
+  const handleToggleLike = async (postId: string, liked?: boolean) => {
+    try {
+      if (liked) {
+        await apiDelete(`/posts/${postId}/like`);
+      } else {
+        await apiPost(`/posts/${postId}/like`);
+      }
+
+      setPosts((prev) =>
+        prev.map((p) =>
+          p._id === postId
+            ? {
+                ...p,
+                likedByMe: liked ? false : true,
+                likeCount: (p.likeCount || 0) + (liked ? -1 : 1),
+              }
+            : p
+        )
+      );
+    } catch (err) {
+      console.error("Like toggle failed", err);
+    }
+  };
+
+  const handleDeletePost = async (postId: string) => {
+    try {
+      const confirmed = window.confirm("Are you sure you want to delete this post?");
+      if (!confirmed) return;
+      await apiDelete(`/posts/${postId}`);
+      setPosts((prev) => prev.filter((p) => p._id !== postId));
+      setComments((prev) => {
+        const clone = { ...prev };
+        delete clone[postId];
+        return clone;
+      });
+      setOpenComments((prev) => {
+        const clone = { ...prev };
+        delete clone[postId];
+        return clone;
+      });
+    } catch (err) {
+      console.error("Delete failed", err);
+    }
+  };
+
+  const handleAddViewing = async (post: FeedPost) => {
+    if (!post.tmdbId) return;
+    const kind: "movie" | "tv" = post.mediaType === "tv" ? "tv" : "movie";
+    try {
+      setViewingSaving((prev) => ({ ...prev, [post._id]: true }));
+      await apiPost("/viewings", {
+        type: kind,
+        tmdbId: post.tmdbId,
+        rating: post.rating || undefined,
+        comment: post.body || undefined,
+        watchedAt: post.createdAt,
+      });
+    } catch (err) {
+      console.error("Add viewing failed", err);
+    } finally {
+      setViewingSaving((prev) => ({ ...prev, [post._id]: false }));
+    }
+  };
+
+  const fetchComments = async (postId: string) => {
+    try {
+      setCommentsLoading((prev) => ({ ...prev, [postId]: true }));
+      const resp = await apiGet<{ items: any[] } | any[]>(
+        `/posts/${postId}/comments?limit=50`
+      );
+      const items = Array.isArray(resp) ? resp : Array.isArray(resp?.items) ? resp.items : [];
+      const normalized: FeedComment[] = items.map((c: any, idx) => ({
+        id: String(c.id || c._id || `c-${idx}`),
+        userId: String(c.userId || c.user || "anon"),
+        text: String(c.text || ""),
+        createdAt:
+          typeof c.createdAt === "string"
+            ? c.createdAt
+            : c.createdAt
+            ? new Date(c.createdAt).toISOString()
+            : new Date().toISOString(),
+      }));
+      setComments((prev) => ({ ...prev, [postId]: normalized }));
+    } catch (err) {
+      console.error("Load comments failed", err);
+    } finally {
+      setCommentsLoading((prev) => ({ ...prev, [postId]: false }));
+    }
+  };
+
+  const handleToggleComments = async (postId: string) => {
+    const next = !openComments[postId];
+    setOpenComments((prev) => ({ ...prev, [postId]: next }));
+    if (next && !comments[postId]) {
+      await fetchComments(postId);
+    }
+  };
+
+  const handleAddComment = async (postId: string) => {
+    const text = commentDrafts[postId]?.trim() || "";
+    if (!text) return;
+    try {
+      setCommentSubmitting((prev) => ({ ...prev, [postId]: true }));
+      const resp = await apiPost<any>(`/posts/${postId}/comments`, { text });
+      setPosts((prev) =>
+        prev.map((p) =>
+          p._id === postId
+            ? { ...p, commentCount: (p.commentCount || 0) + 1 }
+            : p
+        )
+      );
+      const created: FeedComment = {
+        id: String(resp?.id || `c-${Date.now()}`),
+        userId: currentUserId || "me",
+        text,
+        createdAt: resp?.createdAt || new Date().toISOString(),
+      };
+      setComments((prev) => ({
+        ...prev,
+        [postId]: [...(prev[postId] || []), created],
+      }));
+      setCommentDrafts((prev) => ({ ...prev, [postId]: "" }));
+    } catch (err) {
+      console.error("Comment failed", err);
+    } finally {
+      setCommentSubmitting((prev) => ({ ...prev, [postId]: false }));
+    }
   };
 
   const mapTmdbResultToTitle = (r: TmdbSearchResult): SelectedTitle => {
@@ -370,14 +902,10 @@ const HomePage: React.FC = () => {
             <button
               className="app-nav-item"
               type="button"
-              onClick={() => navigate("/assistant")}
+              onClick={() => navigate("/ai")}
             >
               <span className="app-nav-icon">✨</span>
               <span>AI Assistant</span>
-            </button>
-            <button className="app-nav-item">
-              <span className="app-nav-icon">👤</span>
-              <span>Profile</span>
             </button>
           </nav>
           <button className="app-logout-button">Log Out</button>
@@ -453,11 +981,11 @@ const HomePage: React.FC = () => {
                   className="feed-sort-select"
                   value={sortOrder}
                   onChange={(e) =>
-                    setSortOrder(e.target.value as "newest" | "top")
+                    setSortOrder(e.target.value as "latest" | "smart")
                   }
                 >
-                  <option value="newest">Newest</option>
-                  <option value="top">Top rated</option>
+                  <option value="latest">Newest</option>
+                  <option value="smart">Top picks</option>
                 </select>
               </div>
             </div>
@@ -646,10 +1174,20 @@ const HomePage: React.FC = () => {
                         <button
                           type="button"
                           className="create-post-circle create-post-circle--add"
+                          onClick={() => {
+                            // Close the modal and take the user to Circles so they can create/join one
+                            closeCreateModal();
+                            navigate("/circles");
+                          }}
                         >
                           +
                         </button>
                       </div>
+                      {circles.length === 0 && (
+                        <p className="create-post-circles-empty">
+                          You are not in any circles yet. Tap + to create or join one.
+                        </p>
+                      )}
                     </div>
                   </div>
 
@@ -735,11 +1273,11 @@ const HomePage: React.FC = () => {
                       </div>
                     )}
 
-                    <div className="feed-card-main">
-                      <div className="feed-card-title-row">
-                        <h2 className="feed-card-title">
-                          {post.title}
-                          {post.year ? ` (${post.year})` : ""}
+                  <div className="feed-card-main">
+                    <div className="feed-card-title-row">
+                      <h2 className="feed-card-title">
+                        {post.title}
+                        {post.year ? ` (${post.year})` : ""}
                         </h2>
                         <span className="feed-card-type-pill">
                           {post.type === "Movie" ? "Movie" : "Show"}
@@ -779,18 +1317,92 @@ const HomePage: React.FC = () => {
                   </div>
 
                   <footer className="feed-card-footer">
-                    <button className="feed-footer-action">
-                      <span>❤️</span>
+                    <button
+                      className="feed-footer-action"
+                      type="button"
+                      onClick={() => handleToggleLike(post._id, post.likedByMe)}
+                    >
+                      <span>{post.likedByMe ? "❤️" : "🤍"}</span>
                       <span>{post.likeCount}</span>
                     </button>
-                    <button className="feed-footer-action">
+                    <button
+                      className="feed-footer-action"
+                      type="button"
+                      onClick={() => handleToggleComments(post._id)}
+                    >
                       <span>💬</span>
                       <span>{post.commentCount}</span>
+                    </button>
+                    <button
+                      className="feed-footer-action"
+                      type="button"
+                      onClick={() => handleAddViewing(post)}
+                      disabled={!post.tmdbId || viewingSaving[post._id]}
+                    >
+                      <span>🎬</span>
+                      <span>
+                        {viewingSaving[post._id] ? "Saving..." : "Add to viewings"}
+                      </span>
                     </button>
                     <button className="feed-footer-action feed-footer-action--right">
                       🔖
                     </button>
+                    {post.authorId && currentUserId && post.authorId === currentUserId && (
+                      <button
+                        className="feed-footer-action feed-footer-action--right"
+                        type="button"
+                        onClick={() => handleDeletePost(post._id)}
+                      >
+                        🗑
+                      </button>
+                    )}
                   </footer>
+                  {openComments[post._id] && (
+                    <div className="feed-comment-box">
+                      <div className="feed-comment-list">
+                        {commentsLoading[post._id] && (
+                          <div className="feed-comment-loading">Loading comments...</div>
+                        )}
+                        {(comments[post._id] || []).map((c) => (
+                          <div key={c.id} className="feed-comment-item">
+                            <div className="feed-comment-meta">
+                              <span className="feed-comment-author">
+                                {currentUserId && c.userId === currentUserId ? "You" : c.userId}
+                              </span>
+                              <span className="feed-comment-time">
+                                {new Date(c.createdAt).toLocaleString()}
+                              </span>
+                            </div>
+                            <div className="feed-comment-text">{c.text}</div>
+                          </div>
+                        ))}
+                        {!commentsLoading[post._id] &&
+                          (!comments[post._id] || comments[post._id].length === 0) && (
+                            <div className="feed-comment-empty">No comments yet. Be the first!</div>
+                          )}
+                      </div>
+                      <textarea
+                        className="feed-comment-input"
+                        placeholder="Add a comment..."
+                        value={commentDrafts[post._id] || ""}
+                        onChange={(e) =>
+                          setCommentDrafts((prev) => ({
+                            ...prev,
+                            [post._id]: e.target.value,
+                          }))
+                        }
+                        rows={2}
+                      />
+                      <button
+                        type="button"
+                        className="feed-comment-submit"
+                        onClick={() => handleAddComment(post._id)}
+                        disabled={commentSubmitting[post._id]}
+                      >
+                        {commentSubmitting[post._id] ? "Posting..." : "Post comment"}
+                      </button>
+                    </div>
+                  )}
                 </article>
               ))}
           </section>
@@ -834,7 +1446,14 @@ const HomePage: React.FC = () => {
             </p>
             <div className="rail-ai-chip-list">
               {aiSuggestions.map((s) => (
-                <button key={s.id} className="rail-ai-chip">
+                <button
+                  key={s.id}
+                  type="button"
+                  className="rail-ai-chip"
+                  onClick={() =>
+                    navigate("/ai", { state: { initialPrompt: s.text } })
+                  }
+                >
                   {s.text}
                 </button>
               ))}
@@ -842,52 +1461,16 @@ const HomePage: React.FC = () => {
             <button
               className="rail-ai-button"
               type="button"
-              onClick={() => navigate("/assistant")}
+              onClick={() => navigate("/ai")}
             >
               Open AI Assistant
             </button>
           </section>
 
-          <section className="rail-card">
-            <header className="rail-card-header">
-              <h2 className="rail-card-title">Recently Watched</h2>
-            </header>
-            <div className="rail-recent-list">
-              {recentViewings.map((item) => (
-                <div key={item.id} className="rail-recent-item">
-                  <div className="rail-recent-poster">
-                    {item.posterUrl ? (
-                      <img src={item.posterUrl} alt={item.title} />
-                    ) : (
-                      <div className="rail-recent-placeholder" />
-                    )}
-                  </div>
-                  <div className="rail-recent-meta">
-                    <div className="rail-recent-title">{item.title}</div>
-                    <div className="rail-recent-stars">
-                      {Array.from({ length: 5 }).map((_, i) => (
-                        <span
-                          key={i}
-                          className={
-                            i < item.rating
-                              ? "feed-star feed-star--filled"
-                              : "feed-star"
-                          }
-                        >
-                          ★
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </section>
-
           <button
             className="rail-floating-ai-button"
             type="button"
-            onClick={() => navigate("/assistant")}
+            onClick={() => navigate("/ai")}
           >
             <span className="rail-floating-ai-label">AI</span>
           </button>
