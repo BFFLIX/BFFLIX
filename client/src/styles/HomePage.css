@@ -1,3 +1,4 @@
+
 /* ========= HOME PAGE LAYOUT (CENTER FEED + RIGHT RAIL) ========= */
 
 /* ========= PAGE SHELL + 3-COLUMN LAYOUT ========= */
@@ -6,8 +7,8 @@
   width: 100%;
   min-height: 100vh;
   display: flex;
-  padding-top: 64px;
   justify-content: center;
+  padding: 0;
   box-sizing: border-box;
   background: #05030e;
 }
@@ -77,17 +78,18 @@
 
 
 /* Main 3-column layout */
-/* Main 3-column layout */
 .app-main-layout {
   display: grid;
   grid-template-columns: 240px 1fr 320px;
   gap: 0px;
   width: 100%;
-  padding-top: 64px; /* <-- pushes content below the fixed topbar */
+  margin-top: 64px;
   min-height: calc(100vh - 64px);
+  height: auto;
   box-sizing: border-box;
+  padding-top: 0;
 }
-/* Ensures all page content starts below the fixed topbar */
+
 /* Sidebar width */
 .app-sidebar {
   position: fixed;
@@ -146,7 +148,7 @@
   margin-bottom: 12px;
   align-items: center;
   text-align: center;
-  margin-top: 0;
+  margin-top: 64px;
 }
 
 .feed-title {
@@ -702,9 +704,10 @@
   display: flex;
   flex-direction: column;
   gap: 14px;
-  width: 320px;
-  grid-column: 3;
-  margin-top: 0;
+  position: sticky;
+  top: 24px;
+  align-self: flex-start;
+  width: 100%;
 }
 
 .rail-card {

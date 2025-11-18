@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { apiGet, apiPost } from "../lib/api";
-//import bfflixLogo from "../assets/bfflix-logo.svg";
+import bfflixLogo from "../assets/bfflix-logo.svg";
 import "../styles/CirclesPage.css";
 
 type CircleVisibility = "private" | "public";
@@ -260,13 +260,13 @@ const CirclesPage: React.FC = () => {
       <div className="app-main-layout">
         {/* Left sidebar - same structure as HomePage, but Circles active */}
         <aside className="app-sidebar">
-          {/* <div className="app-sidebar-brand">
+          <div className="app-sidebar-brand">
             <img
               src={bfflixLogo}
               alt="BFFLIX"
               className="app-sidebar-logo-img"
             />
-          </div> */}
+          </div>
 
           <nav className="app-sidebar-nav">
             <button
@@ -321,8 +321,8 @@ const CirclesPage: React.FC = () => {
           <header className="circles-header">
             <div className="circles-header-main">
               <div className="circles-title-row">
-                {/* <span className="circles-icon">👥</span>
-                <h2 className="circles-title">Circles</h2> */}
+                <span className="circles-icon">👥</span>
+                <h2 className="circles-title">Circles</h2>
               </div>
               <p className="circles-subtitle">
                 Join circles to connect with others who share your interests in
