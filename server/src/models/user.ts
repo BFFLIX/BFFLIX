@@ -11,6 +11,7 @@ const userSchema = new mongoose.Schema(
     passwordHash: { type: String, required: true },
     name: { type: String, required: true },
     services: [{ type: String, enum: SERVICES, default: [] }],
+    avatarUrl: { type: String, default: "" },
     isAdmin: { type: Boolean, default: false },
 
     // Lockout + suspension

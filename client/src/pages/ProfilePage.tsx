@@ -3,7 +3,7 @@ import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import bfflixLogo from "../assets/bfflix-logo.svg";
 import defaultAvatar from "../assets/default-avatar.svg";
-import { apiGet } from "../lib/api";
+import { apiGet, apiPatch } from "../lib/api";
 import { fetchTmdbTitleDetails } from "../lib/TMDBService";
 import "../styles/ProfilePage.css";
 
@@ -26,7 +26,11 @@ type ProfileViewing = Viewing & {
   safeRating: number;
 };
 
-const MAX_RECENT_VIEWINGS = 5;
+const MAX_RECENT_VIEWINGS = 3;
+const MAX_AVATAR_BYTES = 600 * 1024; // ~600KB
+const VIEWINGS_VISIBILITY_KEY = "profile:viewingsVisibility";
+
+const DATA_URL_REGEX = /^data:image\/[a-zA-Z]+;base64,/;
 
 function formatViewingDate(dateIso?: string) {
   if (!dateIso) return undefined;
@@ -59,8 +63,14 @@ export default function ProfilePage() {
 
   // User info state
   const [userName, setUserName] = useState<string>("");
+  const [avatarUrl, setAvatarUrl] = useState<string>("");
   const [userLoading, setUserLoading] = useState(false);
   const [userError, setUserError] = useState<string | null>(null);
+  const [isEditingProfile, setIsEditingProfile] = useState(false);
+  const [editName, setEditName] = useState("");
+  const [editAvatarUrl, setEditAvatarUrl] = useState("");
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [profileSaveError, setProfileSaveError] = useState<string | null>(null);
 
   // Circles state
   const [circles, setCircles] = useState<Circle[]>([]);
@@ -72,6 +82,13 @@ export default function ProfilePage() {
   const [viewingsCount, setViewingsCount] = useState(0);
   const [viewingsLoading, setViewingsLoading] = useState(false);
   const [viewingsError, setViewingsError] = useState<string | null>(null);
+  const [viewingsPublic, setViewingsPublic] = useState<boolean>(() => {
+    if (typeof window === "undefined") return true;
+    const stored = window.localStorage.getItem(VIEWINGS_VISIBILITY_KEY);
+    if (stored === "private") return false;
+    if (stored === "public") return true;
+    return true;
+  });
 
   // Fetch /me
   useEffect(() => {
@@ -79,8 +96,9 @@ export default function ProfilePage() {
       try {
         setUserLoading(true);
         setUserError(null);
-        const res = await apiGet<{ name: string }>("/me");
+        const res = await apiGet<{ name: string; avatarUrl?: string | null }>("/me");
         setUserName(res.name);
+        setAvatarUrl(res.avatarUrl || "");
       } catch (err: any) {
         console.error("Failed to load user", err);
         setUserError(err.message || "Failed to load user data.");
@@ -201,6 +219,91 @@ export default function ProfilePage() {
 
   const profileInitial = userName ? userName.charAt(0).toUpperCase() : "U";
 
+  const openEditProfile = () => {
+    setIsEditingProfile(true);
+    setEditName(userName);
+    setEditAvatarUrl(avatarUrl);
+    setProfileSaveError(null);
+  };
+
+  const closeEditProfile = () => {
+    setIsEditingProfile(false);
+    setProfileSaveError(null);
+  };
+
+  const handleSaveProfile = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    if (!editName.trim()) {
+      setProfileSaveError("Display name is required.");
+      return;
+    }
+
+    try {
+      setSavingProfile(true);
+      setProfileSaveError(null);
+      const payload = {
+        name: editName.trim(),
+        avatarUrl: editAvatarUrl.trim(),
+      };
+      const updated = await apiPatch<{ name: string; avatarUrl?: string | null }>(
+        "/me",
+        payload
+      );
+      setUserName(updated.name);
+      setAvatarUrl(updated.avatarUrl || "");
+      setIsEditingProfile(false);
+    } catch (err: any) {
+      setProfileSaveError(err.message || "Failed to update profile.");
+    } finally {
+      setSavingProfile(false);
+    }
+  };
+
+  const toggleViewingsVisibility = () => {
+    const next = !viewingsPublic;
+    setViewingsPublic(next);
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(
+        VIEWINGS_VISIBILITY_KEY,
+        next ? "public" : "private"
+      );
+    }
+  };
+
+  const handleAvatarFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      setProfileSaveError("Please upload an image file (png, jpg, gif, webp).");
+      return;
+    }
+
+    if (file.size > MAX_AVATAR_BYTES) {
+      setProfileSaveError("Avatar must be under 600KB. Try a smaller image.");
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const result = reader.result;
+      if (typeof result === "string" && DATA_URL_REGEX.test(result)) {
+        setEditAvatarUrl(result);
+        setProfileSaveError(null);
+      } else {
+        setProfileSaveError("Failed to read image. Please try another file.");
+      }
+    };
+    reader.onerror = () => {
+      setProfileSaveError("Failed to read image. Please try again.");
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const clearAvatarSelection = () => {
+    setEditAvatarUrl("");
+  };
+
   return (
     <div className="app-shell">
       <div className="app-main-layout">
@@ -211,19 +314,34 @@ export default function ProfilePage() {
           </div>
           <nav className="app-sidebar-nav">
             <button className="app-nav-item" onClick={() => navigate("/home")}>
-              <span className="app-nav-icon">dY?�</span><span>Home</span>
+              <span className="app-nav-icon" role="img" aria-hidden="true">
+                🏠
+              </span>
+              <span>Home</span>
             </button>
             <button className="app-nav-item" onClick={() => navigate("/circles")}>
-              <span className="app-nav-icon">dY`�</span><span>Circles</span>
+              <span className="app-nav-icon" role="img" aria-hidden="true">
+                👥
+              </span>
+              <span>Circles</span>
             </button>
             <button className="app-nav-item" onClick={() => navigate("/viewings")}>
-              <span className="app-nav-icon">dYZ�</span><span>Viewings</span>
+              <span className="app-nav-icon" role="img" aria-hidden="true">
+                🎬
+              </span>
+              <span>Viewings</span>
             </button>
             <button className="app-nav-item" onClick={() => navigate("/ai")}>
-              <span className="app-nav-icon">�o"</span><span>AI Assistant</span>
+              <span className="app-nav-icon" role="img" aria-hidden="true">
+                ✨
+              </span>
+              <span>AI Assistant</span>
             </button>
             <button className="app-nav-item app-nav-item--active">
-              <span className="app-nav-icon">dY`</span><span>Profile</span>
+              <span className="app-nav-icon" role="img" aria-hidden="true">
+                👤
+              </span>
+              <span>Profile</span>
             </button>
           </nav>
           <button className="app-logout-button">Log out</button>
@@ -235,8 +353,22 @@ export default function ProfilePage() {
             {/* Profile Header */}
             <section className="profile-header-card">
               <div className="profile-avatar">
-                <img src={defaultAvatar} alt="Default profile avatar" />
-                <span className="profile-avatar-initial">{profileInitial}</span>
+                {avatarUrl ? (
+                  <img
+                    src={avatarUrl}
+                    alt={`${userName || "User"} avatar`}
+                    className="profile-avatar-img profile-avatar-img--user"
+                  />
+                ) : (
+                  <>
+                    <img
+                      src={defaultAvatar}
+                      alt="Default profile avatar"
+                      className="profile-avatar-img"
+                    />
+                    <span className="profile-avatar-initial">{profileInitial}</span>
+                  </>
+                )}
               </div>
 
               <div className="profile-info">
@@ -268,8 +400,94 @@ export default function ProfilePage() {
                     <div className="stat-label">Viewings logged</div>
                   </div>
                 </div>
+
+                <div className="profile-header-actions">
+                  {!isEditingProfile && (
+                    <button
+                      type="button"
+                      className="profile-edit-button"
+                      onClick={openEditProfile}
+                    >
+                      Edit profile
+                    </button>
+                  )}
+                </div>
               </div>
             </section>
+
+            {isEditingProfile && (
+              <form className="profile-edit-card" onSubmit={handleSaveProfile}>
+                <div className="profile-edit-grid">
+                  <label className="profile-edit-field">
+                    <span className="profile-edit-label">Display name</span>
+                    <input
+                      type="text"
+                      value={editName}
+                      className="profile-edit-input"
+                      onChange={(e) => setEditName(e.target.value)}
+                      maxLength={60}
+                      required
+                    />
+                  </label>
+                  <label className="profile-edit-field">
+                    <span className="profile-edit-label">Upload photo</span>
+                    <input
+                      type="file"
+                      accept="image/png,image/jpeg,image/jpg,image/gif,image/webp,image/bmp"
+                      className="profile-edit-file"
+                      onChange={handleAvatarFileChange}
+                    />
+                    <small className="profile-edit-hint">
+                      Supported formats: PNG, JPG, GIF, WEBP (max 600KB). Leave empty or
+                      clear to keep the default avatar.
+                    </small>
+                  </label>
+                  <div className="profile-edit-field">
+                    <span className="profile-edit-label">Preview</span>
+                    <div className="profile-edit-avatar-preview">
+                      {editAvatarUrl ? (
+                        <img src={editAvatarUrl} alt="Avatar preview" />
+                      ) : avatarUrl ? (
+                        <img src={avatarUrl} alt="Avatar preview" />
+                      ) : (
+                        <div className="profile-edit-avatar-placeholder">
+                          {profileInitial}
+                        </div>
+                      )}
+                    </div>
+                    <div className="profile-edit-avatar-actions">
+                      <button
+                        type="button"
+                        className="profile-edit-clear-avatar"
+                        onClick={clearAvatarSelection}
+                      >
+                        Use default avatar
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                {profileSaveError && (
+                  <div className="profile-edit-error">{profileSaveError}</div>
+                )}
+                <div className="profile-edit-actions">
+                  <button
+                    type="button"
+                    className="profile-edit-cancel"
+                    onClick={closeEditProfile}
+                    disabled={savingProfile}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="profile-edit-save"
+                    disabled={savingProfile}
+                  >
+                    {savingProfile ? "Saving..." : "Save changes"}
+                  </button>
+                </div>
+              </form>
+            )}
 
             {/* Circles Section */}
             <section className="profile-section profile-circles-section">
@@ -326,87 +544,125 @@ export default function ProfilePage() {
                     A snapshot of the latest titles you've logged.
                   </p>
                 </div>
-                <button
-                  type="button"
-                  className="profile-section-cta"
-                  onClick={() => navigate("/viewings")}
-                >
-                  View all
-                </button>
+                <div className="profile-viewings-controls">
+                  <div className="profile-privacy-toggle">
+                    <button
+                      type="button"
+                      className={
+                        viewingsPublic
+                          ? "privacy-toggle-pill privacy-toggle-pill--active"
+                          : "privacy-toggle-pill"
+                      }
+                      onClick={() => !viewingsPublic && toggleViewingsVisibility()}
+                    >
+                      Public
+                    </button>
+                    <button
+                      type="button"
+                      className={
+                        !viewingsPublic
+                          ? "privacy-toggle-pill privacy-toggle-pill--active"
+                          : "privacy-toggle-pill"
+                      }
+                      onClick={() => viewingsPublic && toggleViewingsVisibility()}
+                    >
+                      Private
+                    </button>
+                  </div>
+                  <button
+                    type="button"
+                    className="profile-section-cta"
+                    onClick={() => navigate("/viewings")}
+                  >
+                    View all
+                  </button>
+                </div>
               </div>
 
-              {viewingsLoading && (
-                <div className="viewings-loading">Loading viewings...</div>
-              )}
-              {viewingsError && (
-                <div className="viewings-error">{viewingsError}</div>
-              )}
-              {!viewingsLoading && !viewingsError && viewings.length === 0 && (
-                <div className="viewings-empty">No viewings logged yet.</div>
-              )}
-              {!viewingsLoading && !viewingsError && viewings.length > 0 && (
-                <div className="profile-viewings-list">
-                  {viewings.map((viewing) => (
-                    <article key={viewing._id} className="profile-viewing-card">
-                      <div className="profile-viewing-poster">
-                        {viewing.posterUrl ? (
-                          <img src={viewing.posterUrl} alt={viewing.displayTitle} />
-                        ) : (
-                          <div className="profile-viewing-poster--placeholder" />
-                        )}
-                      </div>
-                      <div className="profile-viewing-main">
-                        <div className="profile-viewing-title-row">
-                          <div>
-                            <h4 className="profile-viewing-title">
-                              {viewing.displayTitle}
-                            </h4>
-                            {viewing.type && (
-                              <span className="profile-viewing-type">
-                                {formatViewingTypeLabel(viewing.type)}
-                              </span>
+              {!viewingsPublic ? (
+                <div className="viewings-private-message">
+                  You're keeping your recent viewings private. Toggle back to
+                  Public when you're ready to share.
+                </div>
+              ) : (
+                <>
+                  {viewingsLoading && (
+                    <div className="viewings-loading">Loading viewings...</div>
+                  )}
+                  {viewingsError && (
+                    <div className="viewings-error">{viewingsError}</div>
+                  )}
+                  {!viewingsLoading && !viewingsError && viewings.length === 0 && (
+                    <div className="viewings-empty">No viewings logged yet.</div>
+                  )}
+                  {!viewingsLoading && !viewingsError && viewings.length > 0 && (
+                    <div className="profile-viewings-list">
+                      {viewings.map((viewing) => (
+                        <article key={viewing._id} className="profile-viewing-card">
+                          <div className="profile-viewing-poster">
+                            {viewing.posterUrl ? (
+                              <img
+                                src={viewing.posterUrl}
+                                alt={viewing.displayTitle}
+                              />
+                            ) : (
+                              <div className="profile-viewing-poster--placeholder" />
                             )}
                           </div>
-                          {viewing.formattedDate && (
-                            <span className="profile-viewing-date">
-                              {viewing.formattedDate}
-                            </span>
-                          )}
-                        </div>
-                        {viewing.comment && (
-                          <p className="profile-viewing-comment">
-                            {viewing.comment}
-                          </p>
-                        )}
-                        <div className="profile-viewing-meta">
-                          {viewing.safeRating > 0 && (
-                            <div className="profile-viewing-stars">
-                              {Array.from({ length: 5 }).map((_, index) => (
-                                <span
-                                  key={index}
-                                  className={
-                                    index < viewing.safeRating
-                                      ? "profile-viewing-star profile-viewing-star--filled"
-                                      : "profile-viewing-star"
-                                  }
-                                >
-                                  ★
+                          <div className="profile-viewing-main">
+                            <div className="profile-viewing-title-row">
+                              <div>
+                                <h4 className="profile-viewing-title">
+                                  {viewing.displayTitle}
+                                </h4>
+                                {viewing.type && (
+                                  <span className="profile-viewing-type">
+                                    {formatViewingTypeLabel(viewing.type)}
+                                  </span>
+                                )}
+                              </div>
+                              {viewing.formattedDate && (
+                                <span className="profile-viewing-date">
+                                  {viewing.formattedDate}
                                 </span>
-                              ))}
+                              )}
                             </div>
-                          )}
-                          <button
-                            type="button"
-                            className="profile-viewing-link"
-                            onClick={() => navigate("/viewings")}
-                          >
-                            View details
-                          </button>
-                        </div>
-                      </div>
-                    </article>
-                  ))}
-                </div>
+                            {viewing.comment && (
+                              <p className="profile-viewing-comment">
+                                {viewing.comment}
+                              </p>
+                            )}
+                            <div className="profile-viewing-meta">
+                              {viewing.safeRating > 0 && (
+                                <div className="profile-viewing-stars">
+                                  {Array.from({ length: 5 }).map((_, index) => (
+                                    <span
+                                      key={index}
+                                      className={
+                                        index < viewing.safeRating
+                                          ? "profile-viewing-star profile-viewing-star--filled"
+                                          : "profile-viewing-star"
+                                      }
+                                    >
+                                      ★
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                              <button
+                                type="button"
+                                className="profile-viewing-link"
+                                onClick={() => navigate("/viewings")}
+                              >
+                                View details
+                              </button>
+                            </div>
+                          </div>
+                        </article>
+                      ))}
+                    </div>
+                  )}
+                </>
               )}
             </section>
           </div>

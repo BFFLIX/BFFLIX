@@ -46,11 +46,15 @@
   box-shadow: 0 20px 45px rgba(0, 0, 0, 0.6);
 }
 
-.profile-avatar img {
+.profile-avatar-img {
   width: 100%;
   height: 100%;
   object-fit: cover;
   display: block;
+}
+
+.profile-avatar-img--user {
+  border-radius: 50%;
 }
 
 .profile-avatar-initial {
@@ -134,6 +138,168 @@
 
 /* ---------- Sections ---------- */
 
+.profile-header-actions {
+  margin-top: 12px;
+}
+
+.profile-edit-button {
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  padding: 6px 16px;
+  font-size: 0.82rem;
+  background: rgba(15, 23, 42, 0.6);
+  color: rgba(226, 232, 240, 0.9);
+  cursor: pointer;
+  transition: border-color 0.15s ease, transform 0.1s ease;
+}
+
+.profile-edit-button:hover {
+  border-color: rgba(248, 250, 252, 0.9);
+  transform: translateY(-1px);
+}
+
+.profile-edit-card {
+  margin-top: -8px;
+  margin-bottom: 4px;
+  padding: 20px;
+  border-radius: 24px;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  background: rgba(6, 11, 27, 0.9);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.55);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.profile-edit-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+}
+
+.profile-edit-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.profile-edit-label {
+  font-size: 0.85rem;
+  color: rgba(226, 232, 240, 0.8);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.profile-edit-input {
+  border-radius: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: rgba(15, 23, 42, 0.7);
+  color: #f8fafc;
+  padding: 10px 14px;
+  font-size: 0.95rem;
+}
+
+.profile-edit-input:focus {
+  outline: none;
+  border-color: rgba(124, 58, 237, 0.9);
+  box-shadow: 0 0 0 1px rgba(124, 58, 237, 0.5);
+}
+
+.profile-edit-hint {
+  font-size: 0.78rem;
+  color: rgba(148, 163, 184, 0.85);
+}
+
+.profile-edit-file {
+  border: 1px dashed rgba(148, 163, 184, 0.4);
+  border-radius: 12px;
+  padding: 12px;
+  background: rgba(15, 23, 42, 0.6);
+  color: rgba(226, 232, 240, 0.8);
+}
+
+.profile-edit-avatar-preview {
+  width: 120px;
+  height: 120px;
+  border-radius: 22px;
+  overflow: hidden;
+  background: radial-gradient(circle at 30% 30%, rgba(99, 102, 241, 0.4), rgba(14, 25, 54, 0.9));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  box-shadow: inset 0 0 14px rgba(0, 0, 0, 0.35);
+}
+
+.profile-edit-avatar-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.profile-edit-avatar-placeholder {
+  font-size: 2.6rem;
+  font-weight: 600;
+  color: rgba(248, 250, 252, 0.9);
+}
+
+.profile-edit-avatar-actions {
+  margin-top: 8px;
+}
+
+.profile-edit-clear-avatar {
+  border-radius: 999px;
+  border: none;
+  padding: 6px 14px;
+  font-size: 0.8rem;
+  cursor: pointer;
+  background: rgba(248, 250, 252, 0.08);
+  color: rgba(226, 232, 240, 0.9);
+}
+
+.profile-edit-clear-avatar:hover {
+  background: rgba(248, 250, 252, 0.18);
+}
+
+.profile-edit-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.profile-edit-save,
+.profile-edit-cancel {
+  border-radius: 999px;
+  border: none;
+  padding: 8px 18px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.profile-edit-save {
+  background: linear-gradient(90deg, #8b5cf6, #ec4899);
+  color: #ffffff;
+  box-shadow: 0 12px 28px rgba(236, 72, 153, 0.5);
+}
+
+.profile-edit-save:disabled {
+  opacity: 0.7;
+  cursor: default;
+  box-shadow: none;
+}
+
+.profile-edit-cancel {
+  background: rgba(15, 23, 42, 0.7);
+  color: rgba(226, 232, 240, 0.85);
+  border: 1px solid rgba(148, 163, 184, 0.4);
+}
+
+.profile-edit-error {
+  font-size: 0.85rem;
+  color: #fecaca;
+}
+
 .profile-section {
   background: radial-gradient(
       circle at 100% 0%,
@@ -145,6 +311,17 @@
   border-radius: 26px;
   padding: 24px;
   box-shadow: 0 30px 70px rgba(0, 0, 0, 0.6);
+}
+
+.profile-viewings-section {
+  background: linear-gradient(
+      120deg,
+      rgba(23, 37, 84, 0.95),
+      rgba(19, 27, 61, 0.96)
+    ),
+    rgba(5, 10, 28, 0.9);
+  border-color: rgba(96, 165, 250, 0.35);
+  box-shadow: 0 30px 90px rgba(5, 9, 28, 0.85);
 }
 
 .profile-section-header {
@@ -186,6 +363,41 @@
 .profile-section-cta:hover {
   filter: brightness(1.07);
   transform: translateY(-1px);
+}
+
+.profile-viewings-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.profile-privacy-toggle {
+  display: inline-flex;
+  border-radius: 999px;
+  padding: 3px;
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.5);
+}
+
+.privacy-toggle-pill {
+  border: none;
+  background: transparent;
+  color: rgba(226, 232, 240, 0.75);
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 6px 16px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.privacy-toggle-pill--active {
+  background: linear-gradient(90deg, #6366f1, #a855f7);
+  color: #ffffff;
+  box-shadow: 0 12px 25px rgba(99, 102, 241, 0.45);
 }
 
 /* ---------- Circles ---------- */
@@ -232,14 +444,14 @@
   gap: 14px;
   padding: 12px 14px;
   border-radius: 22px;
-  background: radial-gradient(
-      circle at 0% 0%,
-      rgba(147, 197, 253, 0.35),
-      transparent 60%
+  background: linear-gradient(
+      120deg,
+      rgba(19, 33, 70, 0.95),
+      rgba(15, 24, 50, 0.92)
     ),
-    rgba(10, 17, 40, 0.95);
-  border: 1px solid rgba(37, 99, 235, 0.45);
-  box-shadow: 0 22px 60px rgba(0, 0, 0, 0.75);
+    rgba(8, 15, 35, 0.9);
+  border: 1px solid rgba(89, 106, 255, 0.45);
+  box-shadow: 0 22px 65px rgba(2, 5, 16, 0.85);
 }
 
 .profile-viewing-poster {
@@ -288,8 +500,8 @@
   font-size: 0.7rem;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  background: rgba(16, 185, 129, 0.2);
-  color: rgba(167, 243, 208, 0.85);
+  background: rgba(14, 165, 233, 0.18);
+  color: rgba(125, 211, 252, 0.9);
 }
 
 .profile-viewing-date {
@@ -340,6 +552,15 @@
 .profile-viewing-link:hover {
   border-color: rgba(248, 250, 252, 0.75);
   transform: translateY(-1px);
+}
+
+.viewings-private-message {
+  font-size: 0.92rem;
+  color: rgba(226, 232, 240, 0.9);
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px dashed rgba(148, 163, 184, 0.5);
+  padding: 14px 16px;
+  border-radius: 18px;
 }
 
 /* ---------- Loading / empty helpers ---------- */
