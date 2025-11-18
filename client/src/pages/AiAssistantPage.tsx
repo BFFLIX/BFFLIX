@@ -1,9 +1,10 @@
 
 // src/pages/AiAssistantPage.tsx
 import React, { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import bfflixLogo from "../assets/bfflix-logo.svg";
 import { apiPost } from "../lib/api";
+import "../styles/AiAssistantPage.css";
 
 type ChatRole = "user" | "assistant";
 
@@ -42,6 +43,10 @@ type AgentResponse = {
 const AiAssistantPage: React.FC = () => {
   const navigate = useNavigate();
 
+  const location = useLocation();
+  const locationState = location.state as { initialPrompt?: string } | null;
+  const initialPrompt = locationState?.initialPrompt ?? "";
+
   // Simple conversation id so backend can thread follow-ups
   const [conversationId] = useState(() => `web-${Date.now()}`);
 
@@ -55,7 +60,7 @@ const AiAssistantPage: React.FC = () => {
     },
   ]);
 
-  const [input, setInput] = useState("");
+  const [input, setInput] = useState(initialPrompt);
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
