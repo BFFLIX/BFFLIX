@@ -339,14 +339,13 @@ const HomePage: React.FC = () => {
         apiGet<any>("/circles"),
       ]);
 
-      let refreshedCircles = circles;
+      let refreshedCircles: Circle[] = [];
 
       if (circlesResult.status === "fulfilled") {
         refreshedCircles = normalizeCircles(circlesResult.value);
         setCircles(refreshedCircles);
       } else {
         console.error("Circles load error", circlesResult.reason);
-        refreshedCircles = [];
         setCircles([]);
       }
 
@@ -384,7 +383,7 @@ const HomePage: React.FC = () => {
       console.warn("Failed to load recent viewings (non-fatal)", err);
       setRecentViewings([]);
     }
-  }, [activeTab, activeService, sortOrder, circles]);
+  }, [activeTab, activeService, sortOrder]);
 
   useEffect(() => {
     fetchAll();
