@@ -464,10 +464,14 @@ body {
 .app-main-layout {
   width: 100%;
   margin: 0 auto;
-  max-width: 1440px;
+  max-width: 1500px;
   display: grid;
-  grid-template-columns: 260px minmax(0, 1.8fr) 340px;
-  gap: 1.75rem;
+  grid-template-columns: 220px minmax(0, 2fr) 320px;
+  gap: 1.25rem;
+}
+
+.home-topbar {
+  display: none;
 }
 
 /* ------------- Sidebar ------------- */
@@ -917,6 +921,7 @@ body {
   color: #f9fafb;
   font-size: 0.9rem;
   padding: 10px 14px;
+  font-family: "Times New Roman", Times, serif;
   outline: none;
   transition:
     border-color 0.15s ease-out,

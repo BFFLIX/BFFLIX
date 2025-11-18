@@ -45,6 +45,11 @@ const CirclesPage: React.FC = () => {
   const [joiningCircleId, setJoiningCircleId] = useState<string | null>(null);
   const [leavingCircleId, setLeavingCircleId] = useState<string | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [newDescription, setNewDescription] = useState("");
+  const [newVisibility, setNewVisibility] = useState<"private" | "public">("private");
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
 
   // -------- helper functions to read backend shapes --------
 
@@ -162,16 +167,8 @@ const CirclesPage: React.FC = () => {
   // -------- actions --------
 
   const handleCreateCircleClick = () => {
-    setShowCreateModal(true);
-  };
-
-  const handleViewDetails = (circle: Circle) => {
-    const id = getCircleId(circle);
-    if (!id) {
-      setError("Circle id is missing. Please refresh and try again.");
-      return;
-    }
-    navigate(`/circles/${id}`);
+    setShowCreateModal((prev) => !prev);
+    setCreateError(null);
   };
 
   const handleJoin = async (circle: Circle) => {
@@ -233,6 +230,28 @@ const CirclesPage: React.FC = () => {
 
   const handleNavAssistant = () => {
     navigate("/ai");
+  };
+
+  const handleCreateCircle = async () => {
+    try {
+      setCreating(true);
+      setCreateError(null);
+      await apiPost("/circles", {
+        name: newName.trim(),
+        description: newDescription.trim(),
+        visibility: newVisibility,
+      });
+      setNewName("");
+      setNewDescription("");
+      setNewVisibility("private");
+      setShowCreateModal(false);
+      await loadCircles();
+    } catch (err: any) {
+      console.error("Create circle failed", err);
+      setCreateError(err?.message || "Could not create circle");
+    } finally {
+      setCreating(false);
+    }
   };
 
   // -------- render --------
@@ -355,6 +374,98 @@ const CirclesPage: React.FC = () => {
             </div>
           </section>
 
+          {showCreateModal && (
+            <section className="circle-inline-create">
+              <div className="circle-inline-card">
+                <header className="circle-inline-header">
+                  <h3>Create a circle</h3>
+                  <button
+                    type="button"
+                    className="circle-inline-close"
+                    onClick={() => {
+                      setShowCreateModal(false);
+                      setCreateError(null);
+                    }}
+                  >
+                    ×
+                  </button>
+                </header>
+                <div className="circle-inline-row">
+                  <div className="circle-inline-field">
+                    <label>Name</label>
+                    <input
+                      type="text"
+                      value={newName}
+                      onChange={(e) => setNewName(e.target.value)}
+                      placeholder="Circle name"
+                    />
+                  </div>
+                  <div className="circle-inline-field">
+                    <label>Visibility</label>
+                    <div className="circle-inline-toggle">
+                      <button
+                        type="button"
+                        className={
+                          newVisibility === "public"
+                            ? "vis-btn active"
+                            : "vis-btn"
+                        }
+                        onClick={() => setNewVisibility("public")}
+                      >
+                        Public
+                      </button>
+                      <button
+                        type="button"
+                        className={
+                          newVisibility === "private"
+                            ? "vis-btn active"
+                            : "vis-btn"
+                        }
+                        onClick={() => setNewVisibility("private")}
+                      >
+                        Private
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                <div className="circle-inline-field">
+                  <label>Description</label>
+                  <textarea
+                    value={newDescription}
+                    onChange={(e) => setNewDescription(e.target.value)}
+                    placeholder="Describe your circle..."
+                    rows={3}
+                  />
+                </div>
+                {createError && (
+                  <div className="circles-error" style={{ padding: 0 }}>
+                    {createError}
+                  </div>
+                )}
+                <div className="circle-inline-actions">
+                  <button
+                    type="button"
+                    className="circle-card-button circle-card-button--secondary"
+                    onClick={() => {
+                      setShowCreateModal(false);
+                      setCreateError(null);
+                    }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className="circle-card-button circle-card-button--primary"
+                    onClick={handleCreateCircle}
+                    disabled={creating || !newName.trim()}
+                  >
+                    {creating ? "Creating..." : "Create"}
+                  </button>
+                </div>
+              </div>
+            </section>
+          )}
+
           {error && <div className="circles-error">{error}</div>}
 
           {loading ? (
@@ -381,7 +492,13 @@ const CirclesPage: React.FC = () => {
                   const isBusyLeaving = leavingCircleId === id;
 
                   return (
-                    <article key={id || name} className="circle-card">
+                    <article
+                      key={id || name}
+                      className="circle-card"
+                      onClick={() => {
+                        if (id) navigate(`/circles/${id}`);
+                      }}
+                    >
                       <div className="circle-card-body">
                         {/* Name + visibility pill */}
                         <div className="circle-card-header-row">
@@ -424,21 +541,16 @@ const CirclesPage: React.FC = () => {
                       </div>
 
                       <div className="circle-card-actions">
-                        <button
-                          type="button"
-                          className="circle-card-button circle-card-button--primary"
-                          onClick={() => handleViewDetails(circle)}
-                        >
-                          View Details
-                        </button>
-
                         {member ? (
                           // You are already in this circle
                           <button
                             type="button"
                             className="circle-card-button circle-card-button--secondary"
                             disabled={isBusyLeaving}
-                            onClick={() => handleLeave(circle)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleLeave(circle);
+                            }}
                           >
                             {isBusyLeaving ? "Leaving..." : "Leave"}
                           </button>
@@ -448,7 +560,10 @@ const CirclesPage: React.FC = () => {
                             type="button"
                             className="circle-card-button circle-card-button--secondary"
                             disabled={isBusyJoining}
-                            onClick={() => handleJoin(circle)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleJoin(circle);
+                            }}
                           >
                             {isBusyJoining ? "Joining..." : "Join"}
                           </button>
@@ -470,11 +585,6 @@ const CirclesPage: React.FC = () => {
             </section>
           )}
 
-          <CreateCircleModal
-            isOpen={showCreateModal}
-            onClose={() => setShowCreateModal(false)}
-            onCreated={loadCircles}
-          />
         </main>
       </div>
     </div>
