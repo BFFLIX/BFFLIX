@@ -1,4 +1,3 @@
-
 // src/pages/AiAssistantPage.tsx
 import React, { useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
@@ -282,32 +281,32 @@ const AiAssistantPage: React.FC = () => {
                 </div>
               ))}
             </div>
-
-            <footer className="assistant-input-bar">
-              {error && <div className="assistant-error">{error}</div>}
-              <div className="assistant-input-row">
-                <textarea
-                  className="assistant-input"
-                  placeholder="Ask me anything about movies, shows, or recommendations..."
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  rows={2}
-                />
-                <button
-                  type="button"
-                  className="assistant-send-button"
-                  onClick={handleSend}
-                  disabled={isSending || !input.trim()}
-                >
-                  {isSending ? "…" : "➤"}
-                </button>
-              </div>
-              <div className="assistant-hint">
-                Press Enter to send, Shift+Enter for a new line
-              </div>
-            </footer>
           </section>
+
+          <footer className="assistant-input-bar">
+            {error && <div className="assistant-error">{error}</div>}
+            <div className="assistant-input-row">
+              <textarea
+                className="assistant-input"
+                placeholder="Ask me anything about movies, shows, or recommendations..."
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={handleKeyDown}
+                rows={3}
+              />
+              <button
+                type="button"
+                className="assistant-send-button"
+                onClick={handleSend}
+                disabled={isSending || !input.trim()}
+              >
+                {isSending ? "…" : "➤"}
+              </button>
+            </div>
+            <div className="assistant-hint">
+              Press Enter to send, Shift+Enter for a new line
+            </div>
+          </footer>
         </main>
       </div>
     </div>
