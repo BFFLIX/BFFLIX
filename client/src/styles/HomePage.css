@@ -120,12 +120,7 @@
   background: linear-gradient(145deg, rgba(10, 12, 26, 0.94), rgba(4, 4, 11, 0.88));
   border-radius: 26px;
   padding: 20px 20px 24px;
-  background: linear-gradient(145deg, rgba(10, 12, 26, 0.94), rgba(4, 4, 11, 0.88));
-  border-radius: 26px;
-  padding: 20px 20px 24px;
   box-shadow:
-    0 24px 58px rgba(0, 0, 0, 0.8),
-    0 0 0 1px rgba(255, 255, 255, 0.03);
     0 24px 58px rgba(0, 0, 0, 0.8),
     0 0 0 1px rgba(255, 255, 255, 0.03);
   display: flex;
@@ -152,9 +147,6 @@
 }
 
 .feed-title {
-  font-size: 1.25rem;
-  font-weight: 700;
-  letter-spacing: 0.01em;
   font-size: 1.25rem;
   font-weight: 700;
   letter-spacing: 0.01em;
@@ -233,7 +225,6 @@
   align-items: center;
   gap: 10px;
   width: 100%;
-  width: 100%;
 }
 
 .feed-services {
@@ -249,19 +240,13 @@
   font-size: 0.78rem;
   background: rgba(15, 23, 42, 0.85);
   color: #cbd5e1;
-  padding: 6px 12px;
-  font-size: 0.78rem;
-  background: rgba(15, 23, 42, 0.85);
-  color: #cbd5e1;
   cursor: pointer;
   transition: background 0.14s ease-out, color 0.14s ease-out;
 }
 
 .feed-service-chip--active {
   background: linear-gradient(90deg, #ff4b4b, #ff4f7d);
-  background: linear-gradient(90deg, #ff4b4b, #ff4f7d);
   color: #111827;
-  box-shadow: 0 8px 20px rgba(255, 79, 125, 0.35);
   box-shadow: 0 8px 20px rgba(255, 79, 125, 0.35);
 }
 
@@ -270,11 +255,7 @@
   border-radius: 999px;
   border: 1px solid rgba(148, 163, 184, 0.35);
   background: rgba(15, 23, 42, 0.9);
-  border: 1px solid rgba(148, 163, 184, 0.35);
-  background: rgba(15, 23, 42, 0.9);
   color: #e5e7eb;
-  font-size: 0.82rem;
-  padding: 8px 14px;
   font-size: 0.82rem;
   padding: 8px 14px;
 }
@@ -282,11 +263,12 @@
 /* Feed list and states */
 .feed-list {
   margin-top: 12px;
-  margin-top: 12px;
   display: flex;
   flex-direction: column;
   gap: 0.9rem;
-  padding-right: 0.1rem;
+  max-height: calc(100vh - 260px);
+  padding-right: 0.25rem;
+  overflow-y: auto;
 }
 
 .feed-list::-webkit-scrollbar {
@@ -309,13 +291,8 @@
 
 .feed-card {
   background: linear-gradient(150deg, rgba(15, 16, 35, 0.92), rgba(7, 7, 16, 0.9));
-  background: linear-gradient(150deg, rgba(15, 16, 35, 0.92), rgba(7, 7, 16, 0.9));
   border-radius: 20px;
   border: 1px solid rgba(30, 64, 175, 0.35);
-  padding: 1rem 1.05rem 0.95rem;
-  box-shadow:
-    0 16px 40px rgba(0, 0, 0, 0.6),
-    0 0 0 1px rgba(255, 255, 255, 0.02);
   padding: 1rem 1.05rem 0.95rem;
   box-shadow:
     0 16px 40px rgba(0, 0, 0, 0.6),
@@ -379,8 +356,6 @@
   display: grid;
   grid-template-columns: 140px minmax(0, 1fr);
   gap: 1.1rem;
-  grid-template-columns: 140px minmax(0, 1fr);
-  gap: 1.1rem;
   align-items: flex-start;
 }
 
@@ -405,8 +380,6 @@
 
 .feed-card-title {
   margin: 0;
-  font-size: 1.05rem;
-  font-weight: 700;
   font-size: 1.05rem;
   font-weight: 700;
 }
@@ -443,11 +416,6 @@
   line-height: 1.45;
   color: rgba(229, 231, 235, 0.98);
   font-family: "Times New Roman", Times, serif;
-  margin: 0.25rem 0 0.25rem;
-  font-size: 0.95rem;
-  line-height: 1.45;
-  color: rgba(229, 231, 235, 0.98);
-  font-family: "Times New Roman", Times, serif;
 }
 
 .feed-card-services {
@@ -460,11 +428,7 @@
 .feed-service-pill {
   font-size: 0.74rem;
   padding: 0.22rem 0.6rem;
-  font-size: 0.74rem;
-  padding: 0.22rem 0.6rem;
   border-radius: 999px;
-  background: rgba(15, 23, 42, 0.92);
-  border: 1px solid rgba(148, 163, 184, 0.4);
   background: rgba(15, 23, 42, 0.92);
   border: 1px solid rgba(148, 163, 184, 0.4);
 }
@@ -476,19 +440,16 @@
   align-items: center;
   gap: 0.35rem;
   margin-top: 0.65rem;
-  margin-top: 0.65rem;
 }
 
 .feed-footer-action {
   border: none;
   background: transparent;
   font-size: 0.82rem;
-  font-size: 0.82rem;
   color: rgba(148, 163, 184, 0.95);
   display: inline-flex;
   align-items: center;
   gap: 0.25rem;
-  padding: 0.12rem 0.48rem;
   padding: 0.12rem 0.48rem;
   border-radius: 999px;
   cursor: pointer;
@@ -601,113 +562,15 @@
   color: rgba(148, 163, 184, 0.9);
 }
 
-/* Comment drawer */
-.feed-comment-box {
-  margin-top: 0.65rem;
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  border-radius: 14px;
-  background: rgba(15, 23, 42, 0.85);
-  padding: 0.65rem;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
-}
-
-.feed-comment-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.55rem;
-  margin-bottom: 0.55rem;
-}
-
-.feed-comment-item {
-  display: grid;
-  grid-template-columns: 72px 1fr;
-  gap: 0.45rem;
-  align-items: start;
-}
-
-.feed-comment-meta {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  font-size: 0.78rem;
-  color: #e5e7eb;
-}
-
-.feed-comment-author {
-  font-weight: 700;
-  color: #f97373;
-}
-
-.feed-comment-time {
-  font-size: 0.7rem;
-  color: rgba(148, 163, 184, 0.85);
-}
-
-.feed-comment-text {
-  font-size: 0.85rem;
-  line-height: 1.35;
-  color: rgba(229, 231, 235, 0.95);
-  background: rgba(30, 41, 59, 0.8);
-  border-radius: 12px;
-  padding: 0.55rem 0.7rem;
-}
-
-.feed-comment-input {
-  width: 100%;
-  border-radius: 10px;
-  border: 1px solid rgba(148, 163, 184, 0.35);
-  background: rgba(15, 23, 42, 0.92);
-  color: #e5e7eb;
-  padding: 0.6rem 0.8rem;
-  margin-bottom: 0.35rem;
-  font-size: 0.86rem;
-  resize: vertical;
-  font-family: "Times New Roman", Times, serif;
-}
-
-.feed-comment-input:focus {
-  outline: none;
-  border-color: rgba(249, 115, 115, 0.8);
-  box-shadow: 0 0 0 2px rgba(249, 115, 115, 0.2);
-}
-
-.feed-comment-submit {
-  align-self: flex-end;
-  border: none;
-  border-radius: 10px;
-  background: linear-gradient(90deg, #ff4b4b, #ff4f7d);
-  color: #fff;
-  padding: 0.45rem 0.85rem;
-  font-size: 0.82rem;
-  cursor: pointer;
-  transition: filter 0.15s ease-out, transform 0.1s ease-out;
-}
-
-.feed-comment-submit:disabled {
-  opacity: 0.6;
-  cursor: default;
-}
-
-.feed-comment-submit:not(:disabled):hover {
-  filter: brightness(1.05);
-}
-
-.feed-comment-loading,
-.feed-comment-empty {
-  font-size: 0.82rem;
-  color: rgba(148, 163, 184, 0.9);
-}
-
 /* --------- Right rail on Home --------- */
 
 .app-right-rail {
   display: flex;
   flex-direction: column;
   gap: 14px;
-  position: sticky;
-  top: 24px;
-  align-self: flex-start;
-  width: 100%;
+  width: 320px;
+  grid-column: 3;
+  margin-top: 64px;
 }
 
 .rail-card {
@@ -918,4 +781,3 @@
     bottom: 1.3rem;
   }
 }
-
