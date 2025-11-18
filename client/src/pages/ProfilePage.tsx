@@ -444,7 +444,20 @@ export default function ProfilePage() {
               <span>Profile</span>
             </button>
           </nav>
-          <button className="app-logout-button">Log out</button>
+          <button
+            className="app-logout-button"
+            onClick={() => {
+              localStorage.removeItem("token");
+              localStorage.removeItem("authToken");
+              sessionStorage.removeItem("token");
+              sessionStorage.removeItem("authToken");
+              localStorage.clear();
+              sessionStorage.clear();
+              navigate("/login");
+            }}
+          >
+            Log out
+          </button>
         </aside>
 
         {/* Main content */}

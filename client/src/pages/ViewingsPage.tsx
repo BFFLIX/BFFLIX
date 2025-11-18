@@ -355,7 +355,11 @@ const ViewingsPage: React.FC = () => {
   // ----------------- Layout helpers -----------------
 
   const handleLogout = () => {
-    navigate("/");
+    localStorage.removeItem("token");
+    sessionStorage.removeItem("token");
+    localStorage.removeItem("authToken");
+    sessionStorage.removeItem("authToken");
+    navigate("/login");
   };
 
   return (

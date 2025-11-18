@@ -700,6 +700,15 @@ const HomePage: React.FC = () => {
     }
   };
 
+  // ----------------- Helpers end -----------------
+
+  // ----------------- Logout handler -----------------
+  const handleLogout = () => {
+    localStorage.removeItem("token");
+    sessionStorage.removeItem("token");
+    navigate("/login");
+  };
+
   // ----------------- Render -----------------
 
   return (
@@ -753,7 +762,13 @@ const HomePage: React.FC = () => {
               <span>AI Assistant</span>
             </button>
           </nav>
-          <button className="app-logout-button">Log Out</button>
+          <button
+            className="app-logout-button"
+            type="button"
+            onClick={handleLogout}
+          >
+            Log Out
+          </button>
         </aside>
 
         {/* Center feed */}

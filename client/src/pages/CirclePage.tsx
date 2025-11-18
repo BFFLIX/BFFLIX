@@ -231,6 +231,14 @@ const CirclesPage: React.FC = () => {
     navigate("/ai");
   };
 
+  const handleLogout = () => {
+    localStorage.removeItem("token");
+    localStorage.removeItem("authToken");
+    sessionStorage.removeItem("token");
+    sessionStorage.removeItem("authToken");
+    navigate("/login");
+  };
+
   const handleCreateCircle = async () => {
     try {
       setCreating(true);
@@ -311,7 +319,11 @@ const CirclesPage: React.FC = () => {
             </button>
           </nav>
 
-          <button className="app-logout-button" type="button">
+          <button
+            className="app-logout-button"
+            type="button"
+            onClick={handleLogout}
+          >
             Log out
           </button>
         </aside>
