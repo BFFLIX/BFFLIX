@@ -14,7 +14,7 @@
 
 .circles-header {
   display: flex;
-  justify-content: space-between;
+  justify-content: center;
   align-items: center;
   gap: 16px;
   margin-bottom: 8px;
@@ -23,12 +23,10 @@
 
 .circles-header-main {
   flex: 1;
-}
-
-.circles-header-main {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  align-items: center;
 }
 
 .circles-title-row {
@@ -96,6 +94,18 @@
   flex-direction: column;
   gap: 10px;
   margin-bottom: 4px;
+  align-items: center;
+}
+
+/* center main content width */
+.circles-header,
+.circles-controls,
+.circle-inline-create,
+.circles-grid {
+  width: 100%;
+  max-width: 1100px;
+  margin-left: auto;
+  margin-right: auto;
 }
 
 .circles-tabs {
@@ -105,6 +115,8 @@
   background: rgba(15, 23, 42, 0.96);
   box-shadow: 0 14px 28px rgba(0, 0, 0, 0.6);
   width: fit-content;
+  margin: 0 auto;
+  transform: translate(-60px, -6px);
 }
 
 .circles-tab {
@@ -137,6 +149,8 @@
 
 .circles-search-wrapper {
   width: 100%;
+  max-width: 900px;
+  margin: 6px auto 0;
 }
 
 .circles-search-input {
@@ -162,6 +176,99 @@
   border-color: #6366f1;
   box-shadow: 0 0 0 1px rgba(99, 102, 241, 0.7);
   background: rgba(15, 23, 42, 0.98);
+}
+
+.circle-inline-card {
+  background: rgba(10, 12, 26, 0.92);
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 16px;
+  padding: 14px;
+  box-shadow: 0 18px 45px rgba(0, 0, 0, 0.55);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 720px;
+  width: 100%;
+  margin: 0 auto;
+  transform: translateX(15px);
+}
+
+.circle-inline-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.circle-inline-header h3 {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+
+.circle-inline-close {
+  border: none;
+  background: transparent;
+  color: #e5e7eb;
+  font-size: 1.2rem;
+  cursor: pointer;
+}
+
+.circle-inline-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 10px;
+}
+
+.circle-inline-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.circle-inline-field label {
+  font-size: 0.86rem;
+  color: rgba(229, 231, 235, 0.9);
+}
+
+.circle-inline-field input,
+.circle-inline-field textarea {
+  width: 100%;
+  border-radius: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: rgba(15, 23, 42, 0.92);
+  color: #e5e7eb;
+  padding: 0.6rem 0.8rem;
+  font-size: 0.9rem;
+  font-family: "Times New Roman", Times, serif;
+  resize: vertical;
+}
+
+.circle-inline-toggle {
+  display: inline-flex;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.9);
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  overflow: hidden;
+}
+
+.circle-inline-toggle .vis-btn {
+  border: none;
+  background: transparent;
+  color: #cbd5e1;
+  padding: 0.35rem 0.85rem;
+  font-size: 0.86rem;
+  cursor: pointer;
+}
+
+.circle-inline-toggle .vis-btn.active {
+  background: linear-gradient(90deg, #ff4b4b, #ff4f7d);
+  color: #111827;
+}
+
+.circle-inline-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
 }
 
 /* state text */
@@ -604,4 +711,79 @@
 .app-feed.circles-page .circles-controls,
 .app-feed.circles-page .circles-grid {
   max-width: none;
+}
+
+/* Circle detail & card click */
+.circle-card {
+  cursor: pointer;
+}
+
+.circle-detail-panel {
+  margin: 12px 0 20px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  background: rgba(15, 23, 42, 0.85);
+}
+
+.circle-detail-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.circle-members-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.circle-member-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: rgba(30, 41, 59, 0.8);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.circle-member-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  color: #fff;
+}
+
+.circle-member-meta {
+  display: flex;
+  flex-direction: column;
+}
+
+.circle-member-name {
+  font-weight: 600;
+  color: #f9fafb;
+}
+
+.circle-member-email {
+  font-size: 0.82rem;
+  color: rgba(148, 163, 184, 0.9);
+}
+
+.circle-posts-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.circle-posts-title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
 }

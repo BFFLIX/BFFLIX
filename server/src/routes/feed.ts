@@ -11,6 +11,7 @@ import { validateQuery } from "../middleware/validate";
 import { asyncHandler } from "../middleware/asyncHandler";
 import { makeCursor, parseCursor } from "../lib/cursor";
 import { getPlayableServicesForTitle } from "../Services/providers";
+import tmdb from "../Services/tmdb.service";
 import Like from "../models/Like";
 import Comment from "../models/Comment";
 
@@ -28,13 +29,19 @@ r.get(
   validateQuery(feedQuery),
   asyncHandler(async (req: AuthedRequest, res) => {
     type FeedQuery = z.infer<typeof feedQuery>;
-    const { limit, cursor, sort } = (req.query as unknown as FeedQuery);
+    // Use validated, coerced values from the middleware
+    const { limit, cursor, sort } = (res.locals.query || {}) as FeedQuery;
+    const safeLimit = Number.isFinite(limit) ? limit : 20;
+    const safeSort = sort || "smart";
 
     const parsed = parseCursor(cursor);
 
     // Pull a slightly larger window when using smart sort so we can rank better,
     // then trim to the requested `limit`.
-    const softCap = sort === "smart" ? Math.min(limit * 3, 150) : (limit + 1);
+    const softCap =
+      safeSort === "smart"
+        ? Math.min(safeLimit * 3, 150)
+        : safeLimit + 1;
 
     // 1) user services once
     const me = await User.findById(req.user!.id).select("services").lean();
@@ -97,6 +104,7 @@ r.get(
       new Set(rows.map((r: any) => String(r.authorId)).filter(Boolean))
     );
     const mutualMap = new Map<string, number>();
+    const authorNameMap = new Map<string, string>();
     if (authorIds.length) {
       await Promise.all(
         authorIds.map(async (aid) => {
@@ -107,6 +115,11 @@ r.get(
           mutualMap.set(aid, cnt);
         })
       );
+
+      const authors = await User.find({ _id: { $in: authorIds } })
+        .select("_id name")
+        .lean();
+      authors.forEach((u: any) => authorNameMap.set(String(u._id), u.name || "Someone"));
     }
 
     // Compute recent circle activity for smart ranking (last 14 days)
@@ -156,6 +169,15 @@ r.get(
       });
     }
 
+    // Posts liked by the current user (for likedByMe flag)
+    const likedByMe = new Set<string>();
+    if (postIds.length) {
+      const mine = await Like.find({ postId: { $in: postIds }, userId: req.user!.id })
+        .select("postId")
+        .lean();
+      mine.forEach((doc: any) => likedByMe.add(String(doc.postId)));
+    }
+
     // Comment counts
     const commentCounts = new Map<string, number>();
     const friendCommentCounts = new Map<string, number>();
@@ -180,22 +202,58 @@ r.get(
     }
 
     // 4) annotate with playableOnMyServices (memoized per request)
-    const memo = new Map<string, string[]>();
+    const memoProviders = new Map<string, string[]>();
+    const memoDetails = new Map<string, { title: string; year?: number; poster?: string }>();
     async function annotate(row: any) {
       const key = `${row.type}:${row.tmdbId}`;
-      let providers = memo.get(key);
+      let providers = memoProviders.get(key);
       if (!providers) {
-        providers = await getPlayableServicesForTitle(row.type, row.tmdbId, "US");
-        memo.set(key, providers);
+        try {
+          providers = await getPlayableServicesForTitle(row.type, row.tmdbId, "US");
+        } catch (e) {
+          // If the provider lookup fails (network/API), fall back to empty list so feed still works
+          console.error("Provider lookup failed for", key, e);
+          providers = [];
+        }
+        memoProviders.set(key, providers);
       }
       const playable = providers.filter((p) => myServices.has(p));
+
+      // Title + poster (best effort)
+      let meta = memoDetails.get(key);
+      if (!meta) {
+        try {
+          if (row.type === "movie") {
+            const d = await tmdb.getMovieDetails(row.tmdbId);
+            meta = {
+              title: d?.title || d?.original_title || "Untitled",
+              year: d?.release_date ? Number(String(d.release_date).slice(0, 4)) : undefined,
+              poster: tmdb.getPosterURL(d?.poster_path || null) || undefined,
+            };
+          } else {
+            const d = await tmdb.getTVDetails(row.tmdbId);
+            meta = {
+              title: d?.name || d?.original_name || "Untitled",
+              year: d?.first_air_date ? Number(String(d.first_air_date).slice(0, 4)) : undefined,
+              poster: tmdb.getPosterURL(d?.poster_path || null) || undefined,
+            };
+          }
+        } catch (err) {
+          console.warn("TMDB title lookup failed for", key, err);
+          meta = { title: "Untitled" };
+        }
+        memoDetails.set(key, meta);
+      }
 
       return {
         ...row,
         id: String(row._id),
         _id: undefined,
-        playableOnMyServices: playable,   // <= the new field you wanted
-        availableOn: providers,           // optional: all US providers, if you want to show gray badges
+        playableOnMyServices: playable,
+        availableOn: providers,
+        title: meta?.title || "Untitled",
+        year: meta?.year,
+        imageUrl: meta?.poster,
       };
     }
 
@@ -244,8 +302,23 @@ r.get(
     // Annotate first (providers), then rank if needed
     const annotated = await Promise.all(rows.map(annotate));
 
+    // Lookup circle names
+    const circleIdSet = new Set<string>();
+    annotated.forEach((r: any) => {
+      if (Array.isArray(r.circles)) {
+        r.circles.forEach((cid: any) => circleIdSet.add(String(cid)));
+      }
+    });
+    const circleNameMap = new Map<string, string>();
+    if (circleIdSet.size) {
+      const circlesDocs = await Circle.find({ _id: { $in: Array.from(circleIdSet) } })
+        .select("_id name")
+        .lean();
+      circlesDocs.forEach((c: any) => circleNameMap.set(String(c._id), c.name || "Circle"));
+    }
+
     let ranked = annotated;
-    if (sort === "smart") {
+    if (safeSort === "smart") {
       ranked = annotated
         .map((row) => {
           const playableCount = Array.isArray(row.playableOnMyServices) ? row.playableOnMyServices.length : 0;
@@ -259,14 +332,33 @@ r.get(
 
     // Trim to limit and derive nextCursor using the *chronological* position of the last returned item.
     // We keep cursor chronological so clients can mix smart ranking with stable pagination.
-    const slice = ranked.slice(0, limit);
+    const slice = ranked.slice(0, safeLimit);
     let nextCursor: string | null = null;
-    if (ranked.length > limit) {
+    if (ranked.length > safeLimit) {
       const tail = slice[slice.length - 1];
       nextCursor = makeCursor({ createdAt: tail.createdAt, _id: tail.id || tail._id });
     }
 
-    res.json({ items: slice, nextCursor });
+    // Final shape with author/circle names and engagement metrics
+    const items = slice.map((row: any) => {
+      const circleNames = Array.isArray(row.circles)
+        ? row.circles
+            .map((cid: any) => circleNameMap.get(String(cid)))
+            .filter(Boolean)
+        : [];
+
+      return {
+        ...row,
+        authorId: row.authorId ? String(row.authorId) : undefined,
+        authorName: authorNameMap.get(String(row.authorId)) || "Someone",
+        circleNames,
+        likeCount: likeCounts.get(String(row.id || row._id)) || 0,
+        commentCount: commentCounts.get(String(row.id || row._id)) || 0,
+        likedByMe: likedByMe.has(String(row.id || row._id)),
+      };
+    });
+
+    res.json({ items, nextCursor });
   })
 );
 

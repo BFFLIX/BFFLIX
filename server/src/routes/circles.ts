@@ -156,6 +156,7 @@ r.get("/:id", requireAuth, async (req: AuthedRequest, res) => {
 
   const circle = await Circle.findOne({ _id: idCheck.data, members: req.user!.id })
     .select("name description visibility createdBy members createdAt updatedAt")
+    .populate("members", "name email")
     .lean({ virtuals: true });
 
   if (!circle) return res.status(404).json({ error: "Circle not found or access denied" });
