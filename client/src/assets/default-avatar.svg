@@ -1,0 +1,19 @@
+<svg width="160" height="160" viewBox="0 0 160 160" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Default avatar">
+  <defs>
+    <linearGradient id="avatarGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#8b5cf6" />
+      <stop offset="100%" stop-color="#ec4899" />
+    </linearGradient>
+    <clipPath id="avatarClip">
+      <circle cx="80" cy="80" r="72" />
+    </clipPath>
+  </defs>
+  <rect width="160" height="160" fill="url(#avatarGradient)" rx="80" />
+  <g clip-path="url(#avatarClip)">
+    <circle cx="80" cy="60" r="32" fill="rgba(255,255,255,0.9)" />
+    <path
+      d="M20 160c6-34 34-58 60-58s54 24 60 58H20z"
+      fill="rgba(255,255,255,0.85)"
+    />
+  </g>
+</svg>

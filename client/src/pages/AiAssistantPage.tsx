@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import bfflixLogo from "../assets/bfflix-logo.svg";
 import { apiPost } from "../lib/api";
+import "../styles/AiAssistantPage.css";
 
 type ChatRole = "user" | "assistant";
 
@@ -223,6 +224,7 @@ const AiAssistantPage: React.FC = () => {
               <span className="app-nav-icon">🎬</span>
               <span>Viewings</span>
             </button>
+           
             <button
               className="app-nav-item app-nav-item--active"
               type="button"
@@ -231,7 +233,12 @@ const AiAssistantPage: React.FC = () => {
               <span className="app-nav-icon">✨</span>
               <span>AI Assistant</span>
             </button>
-            <button className="app-nav-item">
+            
+            <button
+              className="app-nav-item"
+              type="button"
+              onClick={() => navigate("/profile")}
+            >
               <span className="app-nav-icon">👤</span>
               <span>Profile</span>
             </button>
