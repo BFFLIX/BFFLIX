@@ -302,7 +302,11 @@ const CirclesPage: React.FC = () => {
               <span className="app-nav-icon">✨</span>
               <span>AI Assistant</span>
             </button>
-            <button className="app-nav-item" type="button">
+            <button
+              className="app-nav-item"
+              type="button"
+              onClick={() => navigate("/profile")}
+            >
               <span className="app-nav-icon">👤</span>
               <span>Profile</span>
             </button>

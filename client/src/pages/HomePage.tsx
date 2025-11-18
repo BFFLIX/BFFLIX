@@ -738,6 +738,14 @@ const HomePage: React.FC = () => {
               <span className="app-nav-icon">✨</span>
               <span>AI Assistant</span>
             </button>
+            <button
+              className="app-nav-item"
+              type="button"
+              onClick={() => navigate("/profile")}
+            >
+              <span className="app-nav-icon">👤</span>
+              <span>Profile</span>
+            </button>
           </nav>
 
           <button className="app-logout-button">Log out</button>
