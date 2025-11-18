@@ -821,7 +821,7 @@ const HomePage: React.FC = () => {
             <button
               className="rail-ai-button"
               type="button"
-              onClick={() => navigate("/assistant")}
+              onClick={() => navigate("/ai")}
             >
               Open AI Assistant
             </button>
@@ -866,7 +866,7 @@ const HomePage: React.FC = () => {
           <button
             className="rail-floating-ai-button"
             type="button"
-            onClick={() => navigate("/assistant")}
+            onClick={() => navigate("/ai")}
           >
             <span className="rail-floating-ai-label">AI</span>
           </button>
