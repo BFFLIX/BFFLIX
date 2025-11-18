@@ -58,7 +58,166 @@ type FeedComment = {
 
 type AiSuggestion = {
   id: string;
+  userId: string;
   text: string;
+  createdAt: string;
+};
+
+type AiSuggestion = {
+  id: string;
+  text: string;
+};
+
+// A loose shape for whatever the /circles endpoint returns.
+// We normalize this into the stricter Circle type used in the UI.
+type RawCircleLike = {
+  _id?: string;
+  id?: string;
+  circleId?: string;
+  name?: string;
+  memberCount?: number;
+  membersCount?: number;
+  circle?: RawCircleLike;
+  memberships?: RawCircleLike[];
+  circles?: RawCircleLike[];
+  items?: RawCircleLike[];
+  data?: RawCircleLike[];
+  [key: string]: any;
+};
+
+const normalizeCircles = (payload: RawCircleLike | RawCircleLike[] | null | undefined): Circle[] => {
+  if (!payload) return [];
+
+  let list: RawCircleLike[] = [];
+
+  // Common shapes we might see from the backend
+  if (Array.isArray(payload)) {
+    list = payload;
+  } else if (Array.isArray(payload.items)) {
+    list = payload.items;
+  } else if (Array.isArray(payload.memberships)) {
+    list = payload.memberships;
+  } else if (Array.isArray(payload.circles)) {
+    list = payload.circles;
+  } else if (Array.isArray(payload.data)) {
+    list = payload.data;
+  } else {
+    // Fallback: maybe it is a single circle-like object
+    list = [payload];
+  }
+
+  const seen = new Set<string>();
+  const result: Circle[] = [];
+
+  for (const entry of list) {
+    const base = (entry.circle as RawCircleLike) || entry;
+
+    const id =
+      (base._id as string | undefined) ||
+      (base.id as string | undefined) ||
+      (base.circleId as string | undefined);
+
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+
+    result.push({
+      _id: id,
+      name: (base.name as string | undefined) || "Untitled circle",
+      memberCount:
+        typeof base.memberCount === "number"
+          ? base.memberCount
+          : typeof base.membersCount === "number"
+          ? base.membersCount
+          : 0,
+    });
+  }
+
+  return result;
+};
+
+// Normalize whatever the feed endpoint returns into the stricter FeedPost shape
+const normalizeFeedItems = (items: any[], circlesLookup: Map<string, string>): FeedPost[] => {
+  return (items || []).map((raw, idx) => {
+    const id =
+      (raw && (raw.id || raw._id || raw.canonicalId)) ||
+      `tmp-${idx}-${Date.now()}`;
+
+    const circleIds: string[] = Array.isArray(raw?.circles)
+      ? raw.circles.map((c: any) => String(c))
+      : Array.isArray(raw?.circleIds)
+      ? raw.circleIds.map((c: any) => String(c))
+      : [];
+
+    const circleNames =
+      Array.isArray(raw?.circleNames) && raw.circleNames.length
+        ? raw.circleNames
+        : circleIds
+            .map((cid) => circlesLookup.get(cid))
+            .filter((n): n is string => Boolean(n));
+
+    const body =
+      (typeof raw?.body === "string" && raw.body) ||
+      (typeof raw?.comment === "string" && raw.comment) ||
+      "";
+
+    const services: string[] = Array.isArray(raw?.services)
+      ? raw.services
+      : Array.isArray(raw?.playableOnMyServices)
+      ? raw.playableOnMyServices
+      : Array.isArray(raw?.availableOn)
+      ? raw.availableOn
+      : [];
+
+    const createdAt =
+      typeof raw?.createdAt === "string"
+        ? raw.createdAt
+        : typeof raw?.createdAt === "number"
+        ? new Date(raw.createdAt).toISOString()
+        : new Date().toISOString();
+
+    return {
+      _id: String(id),
+      authorId: raw?.authorId ? String(raw.authorId) : undefined,
+      authorName:
+        (raw?.authorName as string) ||
+        (raw?.author as string) ||
+        (raw?.authorId as string) ||
+        "Someone",
+      authorAvatarUrl: raw?.authorAvatarUrl as string | undefined,
+      circleNames,
+      createdAt,
+      title:
+        (raw?.title as string) ||
+        (raw?.name as string) ||
+        (raw?.tmdbTitle as string) ||
+        "Untitled",
+      year:
+        typeof raw?.year === "number"
+          ? raw.year
+          : raw?.watchedAt
+          ? Number(String(raw.watchedAt).slice(0, 4))
+          : undefined,
+      type:
+        raw?.type === "tv" || raw?.type === "tv_show" || raw?.type === "Show"
+          ? "Show"
+          : "Movie",
+      mediaType:
+        raw?.type === "tv" || raw?.type === "tv_show" || raw?.type === "Show"
+          ? "tv"
+          : "movie",
+      tmdbId: raw?.tmdbId ? String(raw.tmdbId) : undefined,
+      rating: typeof raw?.rating === "number" ? raw.rating : 0,
+      body,
+      services: services as any,
+      likeCount: typeof raw?.likeCount === "number" ? raw.likeCount : 0,
+      commentCount:
+        typeof raw?.commentCount === "number" ? raw.commentCount : 0,
+      likedByMe: !!raw?.likedByMe,
+      imageUrl:
+        (raw?.imageUrl as string | undefined) ||
+        (raw?.posterUrl as string | undefined),
+    };
+  });
 };
 
 // A loose shape for whatever the /circles endpoint returns.
@@ -422,6 +581,7 @@ const HomePage: React.FC = () => {
   const [currentUserName, setCurrentUserName] = useState<string | null>(null);
   const [circles, setCircles] = useState<Circle[]>([]);
   const [aiSuggestions] = useState<AiSuggestion[]>(STATIC_AI_SUGGESTIONS);
+  const [recentViewings, setRecentViewings] = useState<RecentViewing[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [commentDrafts, setCommentDrafts] = useState<Record<string, string>>(
@@ -463,8 +623,6 @@ const HomePage: React.FC = () => {
   const [postError, setPostError] = useState<string | null>(null);
 
     // ----------------- Data loading -----------------
-
-  const [me, setMe] = useState<any>(null);
 
   const fetchAll = useCallback(async () => {
     setIsLoading(true);
@@ -533,6 +691,16 @@ const HomePage: React.FC = () => {
       setIsLoading(false);
     }
 
+    // 2. Soft-fail extra: recent viewings.
+    //    If this 404s in prod we just log it and leave the UI empty
+    //    instead of crashing the main feed.
+    try {
+      const recentData = await apiGet<RecentViewing[]>("/viewings/recent");
+      setRecentViewings(recentData);
+    } catch (err) {
+      console.warn("Failed to load recent viewings (non-fatal)", err);
+      setRecentViewings([]);
+    }
   }, [activeTab, activeService, sortOrder]);
 
   useEffect(() => {
@@ -850,23 +1018,21 @@ const HomePage: React.FC = () => {
   //comment
   return (
     <div className="app-shell">
-      <header className="app-topbar">
-        <div className="topbar-left">
-          <img src={bfflixLogo} alt="BFFLIX" className="topbar-logo" />
-        </div>
-
-        <div className="topbar-center">
-          <h1>Home</h1>
-        </div>
-
-        <div className="topbar-right">
-          <button className="topbar-profile-btn">
-            <img src={defaultProfile} alt="profile" />
-            <span>{me?.name || ""}</span>
+      <div className="home-topbar">
+        <h1 className="home-topbar-title">Home</h1>
+        <div className="home-topbar-right">
+          <button
+            type="button"
+            className="profile-chip"
+            onClick={() => navigate("/profile")}
+          >
+            <span className="profile-chip-avatar">👤</span>
+            <span className="profile-chip-name">
+              {currentUserName || "Profile"}
+            </span>
           </button>
         </div>
-      </header>
-
+      </div>
       <div className="app-main-layout">
         {/* Left sidebar */}
         <aside className="app-sidebar">
@@ -1465,6 +1631,46 @@ const HomePage: React.FC = () => {
             >
               Open AI Assistant
             </button>
+          </section>
+
+          <section className="rail-card">
+            <header className="rail-card-header">
+              <h2 className="rail-card-title">Recently watched</h2>
+            </header>
+            {recentViewings.length === 0 ? (
+              <p className="rail-empty-text">
+                Start logging what you watch to see it here.
+              </p>
+            ) : (
+              <ul className="rail-recent-viewings-list">
+                {recentViewings.map((v) => (
+                  <li key={v.id} className="rail-recent-viewing-item">
+                    {v.posterUrl && (
+                      <div className="rail-recent-poster">
+                        <img src={v.posterUrl} alt={v.title} />
+                      </div>
+                    )}
+                    <div className="rail-recent-content">
+                      <div className="rail-recent-title">{v.title}</div>
+                      <div className="rail-recent-rating">
+                        {Array.from({ length: 5 }).map((_, i) => (
+                          <span
+                            key={i}
+                            className={
+                              i < v.rating
+                                ? "feed-star feed-star--filled"
+                                : "feed-star"
+                            }
+                          >
+                            ★
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
           </section>
 
           <button
