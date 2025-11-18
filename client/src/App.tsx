@@ -5,20 +5,22 @@ import AuthPage from "./pages/AuthPage";
 import HomePage from "./pages/HomePage";
 import CirclesPage from "./pages/CirclePage";
 import AiAssistantPage from "./pages/AiAssistantPage";
+import ViewingsPage from "./pages/ViewingsPage";
 
 function App() {
   return (
     <BrowserRouter>
       <Routes>
-        {/* Auth / login */}
+        {/* Login / auth */}
         <Route path="/" element={<AuthPage />} />
 
         {/* Main app pages */}
         <Route path="/home" element={<HomePage />} />
         <Route path="/circles" element={<CirclesPage />} />
-        <Route path="/assistant" element={<AiAssistantPage />} />
+        <Route path="/viewings" element={<ViewingsPage />} />
+        <Route path="/ai" element={<AiAssistantPage />} />
 
-        {/* Fallback */}
+        {/* Catch-all */}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>

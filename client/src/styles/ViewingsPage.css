@@ -1,0 +1,429 @@
+
+/* src/pages/ViewingsPage.css */
+
+/* Root container inside the center column card */
+.viewings-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(148, 163, 184, 0.35); /* subtle divider like Home/Circles */
+  min-height: calc(100vh - 56px);
+}
+
+/* ===== HEADER: TITLE + ADD VIEWING ===== */
+
+.viewings-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding-bottom: 10px;
+}
+
+.viewings-header-main {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.viewings-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.viewings-icon {
+  font-size: 1.1rem;
+}
+
+.viewings-title {
+  margin: 0;
+  font-size: 1.35rem;
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.viewings-subtitle {
+  margin: 0;
+  font-size: 0.86rem;
+  color: rgba(209, 213, 219, 0.8);
+}
+
+/* Add viewing -> this should call your +Post flow */
+.viewings-add-button {
+  border-radius: 999px;
+  border: none;
+  padding: 9px 18px;
+  font-size: 0.86rem;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  background: linear-gradient(90deg, #ff4b4b, #ff4f7d);
+  color: #ffffff;
+  box-shadow:
+    0 16px 40px rgba(255, 94, 133, 0.7),
+    0 0 0 1px rgba(255, 255, 255, 0.04);
+  transition:
+    filter 0.15s ease-out,
+    transform 0.1s ease-out;
+}
+
+.viewings-add-button:hover {
+  filter: brightness(1.06);
+  transform: translateY(-1px);
+}
+
+.viewings-add-plus {
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.96);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.9rem;
+}
+
+/* ===== FILTER BAR (tabs + dropdowns) ===== */
+
+.viewings-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+
+/* Tabs like All / Movies / Shows / This month */
+.viewings-tabs {
+  display: inline-flex;
+  padding: 4px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.96);
+  box-shadow: 0 14px 28px rgba(0, 0, 0, 0.6);
+}
+
+.viewings-tab {
+  border-radius: 999px;
+  border: none;
+  padding: 6px 18px;
+  font-size: 0.82rem;
+  font-weight: 500;
+  background: transparent;
+  color: rgba(219, 234, 254, 0.85);
+  cursor: pointer;
+  transition:
+    background 0.15s ease-out,
+    color 0.15s ease-out,
+    transform 0.1s ease-out;
+}
+
+.viewings-tab:hover {
+  background: rgba(37, 99, 235, 0.2);
+  transform: translateY(-1px);
+}
+
+.viewings-tab--active {
+  background: #2563eb;
+  color: #ffffff;
+  box-shadow:
+    0 12px 30px rgba(37, 99, 235, 0.6),
+    0 0 0 1px rgba(255, 255, 255, 0.04);
+}
+
+/* Right side controls: sort / time range etc */
+.viewings-filters-right {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.viewings-select {
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.55);
+  background: rgba(15, 23, 42, 0.96);
+  color: #e5e7eb;
+  font-size: 0.78rem;
+  padding: 5px 12px;
+  outline: none;
+}
+
+/* ===== EMPTY / ERROR STATES ===== */
+
+.viewings-loading,
+.viewings-empty,
+.viewings-error {
+  font-size: 0.86rem;
+  padding: 0.4rem 0.1rem;
+  color: rgba(148, 163, 184, 0.95);
+}
+
+.viewings-error {
+  color: #fecaca;
+}
+
+/* ===== LIST LAYOUT ===== */
+
+.viewings-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+/* Single viewing row (poster + details) */
+.viewing-card {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr);
+  gap: 12px;
+  align-items: flex-start;
+  padding: 10px 12px;
+  border-radius: 18px;
+  background: radial-gradient(
+      circle at 0 0,
+      rgba(147, 197, 253, 0.18),
+      transparent 55%
+    ),
+    rgba(15, 23, 42, 0.98);
+  border: 1px solid rgba(37, 99, 235, 0.45);
+  box-shadow: 0 18px 45px rgba(0, 0, 0, 0.9);
+}
+
+/* Poster */
+.viewing-poster {
+  width: 88px;
+  height: 130px;
+  border-radius: 12px;
+  overflow: hidden;
+  background: radial-gradient(circle at 0 0, rgba(148, 163, 253, 0.4), #020617);
+}
+
+.viewing-poster img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* Right column content */
+.viewing-main {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* Top row: Title + status pill */
+.viewing-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.viewing-title {
+  margin: 0;
+  font-size: 0.96rem;
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.viewing-meta-type {
+  font-size: 0.7rem;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.9);
+  border: 1px solid rgba(148, 163, 184, 0.65);
+}
+
+/* Status pill – "Watched" etc */
+.viewing-status-pill {
+  font-size: 0.7rem;
+  padding: 2px 10px;
+  border-radius: 999px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  background: rgba(34, 197, 94, 0.16);
+  border: 1px solid rgba(34, 197, 94, 0.85);
+  color: #bbf7d0;
+}
+
+/* Mid row: date + circles + duration */
+.viewing-meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 0.78rem;
+  color: rgba(148, 163, 184, 0.96);
+}
+
+.viewing-meta-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.viewing-meta-label {
+  color: rgba(148, 163, 184, 0.85);
+}
+
+/* Circle tags */
+.viewing-circles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.viewing-circle-pill {
+  font-size: 0.72rem;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.96);
+  border: 1px solid rgba(129, 140, 248, 0.75);
+  color: rgba(219, 234, 254, 0.96);
+}
+
+/* Bottom row: rating stars + quick actions */
+.viewing-bottom-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.viewing-stars {
+  font-size: 0.9rem;
+}
+
+.viewing-stars span {
+  color: rgba(55, 65, 81, 0.9);
+}
+
+.viewing-stars span.viewing-star--filled {
+  color: #facc15;
+}
+
+.viewing-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 6px;
+}
+
+.viewing-action-button {
+  border-radius: 999px;
+  border: none;
+  padding: 5px 10px;
+  font-size: 0.75rem;
+  cursor: pointer;
+  background: rgba(15, 23, 42, 0.96);
+  color: rgba(229, 231, 235, 0.96);
+  transition:
+    background 0.15s ease-out,
+    transform 0.1s ease-out;
+}
+
+.viewing-action-button:hover {
+  background: rgba(148, 163, 184, 0.2);
+  transform: translateY(-1px);
+}
+
+/* Details drawer */
+.viewing-details-drawer {
+  position: fixed;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: min(380px, 100%);
+  background: #101010;
+  border-left: 1px solid #262626;
+  padding: 20px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  z-index: 40;
+}
+
+.viewing-details-close {
+  align-self: flex-end;
+  border: none;
+  background: transparent;
+  color: #b3b3b3;
+  font-size: 20px;
+  cursor: pointer;
+}
+
+.viewing-details-header h2 {
+  font-size: 18px;
+  font-weight: 600;
+  color: #ffffff;
+  margin-bottom: 6px;
+}
+
+.viewing-details-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  font-size: 14px;
+  color: #d4d4d4;
+}
+
+.viewing-details-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.viewing-details-note {
+  margin-top: 4px;
+}
+
+.viewing-details-note p {
+  margin-top: 4px;
+  line-height: 1.5;
+  color: #e5e5e5;
+}
+
+.viewing-details-loading,
+.viewing-details-error {
+  font-size: 14px;
+  color: #b3b3b3;
+}
+
+/* Create viewing modal */
+.create-viewing-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 60px;
+  z-index: 50;
+}
+
+/* ===== RESPONSIVE ===== */
+
+@media (max-width: 768px) {
+  .viewings-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .viewings-add-button {
+    align-self: stretch;
+    justify-content: center;
+  }
+
+  .viewing-card {
+    grid-template-columns: 72px minmax(0, 1fr);
+  }
+
+  .viewing-poster {
+    width: 72px;
+    height: 110px;
+  }
+}

@@ -1,10 +1,11 @@
 
-// client/src/pages/CirclesPage.tsx
+// client/src/styles/CirclesPage.tsx
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { apiGet, apiPost } from "../lib/api";
 import CreateCircleModal from "../components/CreateCircleModal";
 import bfflixLogo from "../assets/bfflix-logo.svg";
+import "../styles/CirclesPage.css";
 
 type CircleVisibility = "private" | "public";
 
@@ -226,6 +227,10 @@ const CirclesPage: React.FC = () => {
     navigate("/circles");
   };
 
+  const handleNavViewings = () => {
+    navigate("/viewings");
+  };
+
   const handleNavAssistant = () => {
     navigate("/assistant");
   };
@@ -262,7 +267,11 @@ const CirclesPage: React.FC = () => {
               <span className="app-nav-icon">👥</span>
               <span>Circles</span>
             </button>
-            <button className="app-nav-item" type="button">
+            <button
+              className="app-nav-item"
+              type="button"
+              onClick={handleNavViewings}
+            >
               <span className="app-nav-icon">🎬</span>
               <span>Viewings</span>
             </button>
