@@ -2,8 +2,8 @@
 // src/pages/HomePage.tsx
 import React, { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import bfflixLogo from "../assets/bfflix-logo.svg";
-import defaultProfile from "../assets/default-profile.png";
+// import bfflixLogo from "../assets/bfflix-logo.svg";
+// import defaultProfile from "../assets/default-profile.png";
 import { apiGet, apiPost, apiDelete } from "../lib/api";
 import "../styles/HomePage.css";
 
@@ -58,318 +58,168 @@ type FeedComment = {
 
 type AiSuggestion = {
   id: string;
-  userId: string;
   text: string;
-  createdAt: string;
 };
 
-type AiSuggestion = {
+
+// A loose shape for whatever the /circles endpoint returns.
+// We normalize this into the stricter Circle type used in the UI.
+type RawCircleLike = {
+  _id?: string;
+  id?: string;
+  circleId?: string;
+  name?: string;
+  memberCount?: number;
+  membersCount?: number;
+  circle?: RawCircleLike;
+  memberships?: RawCircleLike[];
+  circles?: RawCircleLike[];
+  items?: RawCircleLike[];
+  data?: RawCircleLike[];
+  [key: string]: any;
+};
+
+const normalizeCircles = (payload: RawCircleLike | RawCircleLike[] | null | undefined): Circle[] => {
+  if (!payload) return [];
+
+  let list: RawCircleLike[] = [];
+
+  // Common shapes we might see from the backend
+  if (Array.isArray(payload)) {
+    list = payload;
+  } else if (Array.isArray(payload.items)) {
+    list = payload.items;
+  } else if (Array.isArray(payload.memberships)) {
+    list = payload.memberships;
+  } else if (Array.isArray(payload.circles)) {
+    list = payload.circles;
+  } else if (Array.isArray(payload.data)) {
+    list = payload.data;
+  } else {
+    // Fallback: maybe it is a single circle-like object
+    list = [payload];
+  }
+
+  const seen = new Set<string>();
+  const result: Circle[] = [];
+
+  for (const entry of list) {
+    const base = (entry.circle as RawCircleLike) || entry;
+
+    const id =
+      (base._id as string | undefined) ||
+      (base.id as string | undefined) ||
+      (base.circleId as string | undefined);
+
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+
+    result.push({
+      _id: id,
+      name: (base.name as string | undefined) || "Untitled circle",
+      memberCount:
+        typeof base.memberCount === "number"
+          ? base.memberCount
+          : typeof base.membersCount === "number"
+          ? base.membersCount
+          : 0,
+    });
+  }
+
+  return result;
+};
+
+// Normalize whatever the feed endpoint returns into the stricter FeedPost shape
+const normalizeFeedItems = (items: any[], circlesLookup: Map<string, string>): FeedPost[] => {
+  return (items || []).map((raw, idx) => {
+    const id =
+      (raw && (raw.id || raw._id || raw.canonicalId)) ||
+      `tmp-${idx}-${Date.now()}`;
+
+    const circleIds: string[] = Array.isArray(raw?.circles)
+      ? raw.circles.map((c: any) => String(c))
+      : Array.isArray(raw?.circleIds)
+      ? raw.circleIds.map((c: any) => String(c))
+      : [];
+
+    const circleNames =
+      Array.isArray(raw?.circleNames) && raw.circleNames.length
+        ? raw.circleNames
+        : circleIds
+            .map((cid) => circlesLookup.get(cid))
+            .filter((n): n is string => Boolean(n));
+
+    const body =
+      (typeof raw?.body === "string" && raw.body) ||
+      (typeof raw?.comment === "string" && raw.comment) ||
+      "";
+
+    const services: string[] = Array.isArray(raw?.services)
+      ? raw.services
+      : Array.isArray(raw?.playableOnMyServices)
+      ? raw.playableOnMyServices
+      : Array.isArray(raw?.availableOn)
+      ? raw.availableOn
+      : [];
+
+    const createdAt =
+      typeof raw?.createdAt === "string"
+        ? raw.createdAt
+        : typeof raw?.createdAt === "number"
+        ? new Date(raw.createdAt).toISOString()
+        : new Date().toISOString();
+
+    return {
+      _id: String(id),
+      authorId: raw?.authorId ? String(raw.authorId) : undefined,
+      authorName:
+        (raw?.authorName as string) ||
+        (raw?.author as string) ||
+        (raw?.authorId as string) ||
+        "Someone",
+      authorAvatarUrl: raw?.authorAvatarUrl as string | undefined,
+      circleNames,
+      createdAt,
+      title:
+        (raw?.title as string) ||
+        (raw?.name as string) ||
+        (raw?.tmdbTitle as string) ||
+        "Untitled",
+      year:
+        typeof raw?.year === "number"
+          ? raw.year
+          : raw?.watchedAt
+          ? Number(String(raw.watchedAt).slice(0, 4))
+          : undefined,
+      type:
+        raw?.type === "tv" || raw?.type === "tv_show" || raw?.type === "Show"
+          ? "Show"
+          : "Movie",
+      mediaType:
+        raw?.type === "tv" || raw?.type === "tv_show" || raw?.type === "Show"
+          ? "tv"
+          : "movie",
+      tmdbId: raw?.tmdbId ? String(raw.tmdbId) : undefined,
+      rating: typeof raw?.rating === "number" ? raw.rating : 0,
+      body,
+      services: services as any,
+      likeCount: typeof raw?.likeCount === "number" ? raw.likeCount : 0,
+      commentCount:
+        typeof raw?.commentCount === "number" ? raw.commentCount : 0,
+      likedByMe: !!raw?.likedByMe,
+      imageUrl:
+        (raw?.imageUrl as string | undefined) ||
+        (raw?.posterUrl as string | undefined),
+    };
+  });
+};
+
+// RecentViewing type for recently watched
+type RecentViewing = {
   id: string;
-  text: string;
-};
-
-// A loose shape for whatever the /circles endpoint returns.
-// We normalize this into the stricter Circle type used in the UI.
-type RawCircleLike = {
-  _id?: string;
-  id?: string;
-  circleId?: string;
-  name?: string;
-  memberCount?: number;
-  membersCount?: number;
-  circle?: RawCircleLike;
-  memberships?: RawCircleLike[];
-  circles?: RawCircleLike[];
-  items?: RawCircleLike[];
-  data?: RawCircleLike[];
-  [key: string]: any;
-};
-
-const normalizeCircles = (payload: RawCircleLike | RawCircleLike[] | null | undefined): Circle[] => {
-  if (!payload) return [];
-
-  let list: RawCircleLike[] = [];
-
-  // Common shapes we might see from the backend
-  if (Array.isArray(payload)) {
-    list = payload;
-  } else if (Array.isArray(payload.items)) {
-    list = payload.items;
-  } else if (Array.isArray(payload.memberships)) {
-    list = payload.memberships;
-  } else if (Array.isArray(payload.circles)) {
-    list = payload.circles;
-  } else if (Array.isArray(payload.data)) {
-    list = payload.data;
-  } else {
-    // Fallback: maybe it is a single circle-like object
-    list = [payload];
-  }
-
-  const seen = new Set<string>();
-  const result: Circle[] = [];
-
-  for (const entry of list) {
-    const base = (entry.circle as RawCircleLike) || entry;
-
-    const id =
-      (base._id as string | undefined) ||
-      (base.id as string | undefined) ||
-      (base.circleId as string | undefined);
-
-    if (!id || seen.has(id)) continue;
-    seen.add(id);
-
-    result.push({
-      _id: id,
-      name: (base.name as string | undefined) || "Untitled circle",
-      memberCount:
-        typeof base.memberCount === "number"
-          ? base.memberCount
-          : typeof base.membersCount === "number"
-          ? base.membersCount
-          : 0,
-    });
-  }
-
-  return result;
-};
-
-// Normalize whatever the feed endpoint returns into the stricter FeedPost shape
-const normalizeFeedItems = (items: any[], circlesLookup: Map<string, string>): FeedPost[] => {
-  return (items || []).map((raw, idx) => {
-    const id =
-      (raw && (raw.id || raw._id || raw.canonicalId)) ||
-      `tmp-${idx}-${Date.now()}`;
-
-    const circleIds: string[] = Array.isArray(raw?.circles)
-      ? raw.circles.map((c: any) => String(c))
-      : Array.isArray(raw?.circleIds)
-      ? raw.circleIds.map((c: any) => String(c))
-      : [];
-
-    const circleNames =
-      Array.isArray(raw?.circleNames) && raw.circleNames.length
-        ? raw.circleNames
-        : circleIds
-            .map((cid) => circlesLookup.get(cid))
-            .filter((n): n is string => Boolean(n));
-
-    const body =
-      (typeof raw?.body === "string" && raw.body) ||
-      (typeof raw?.comment === "string" && raw.comment) ||
-      "";
-
-    const services: string[] = Array.isArray(raw?.services)
-      ? raw.services
-      : Array.isArray(raw?.playableOnMyServices)
-      ? raw.playableOnMyServices
-      : Array.isArray(raw?.availableOn)
-      ? raw.availableOn
-      : [];
-
-    const createdAt =
-      typeof raw?.createdAt === "string"
-        ? raw.createdAt
-        : typeof raw?.createdAt === "number"
-        ? new Date(raw.createdAt).toISOString()
-        : new Date().toISOString();
-
-    return {
-      _id: String(id),
-      authorId: raw?.authorId ? String(raw.authorId) : undefined,
-      authorName:
-        (raw?.authorName as string) ||
-        (raw?.author as string) ||
-        (raw?.authorId as string) ||
-        "Someone",
-      authorAvatarUrl: raw?.authorAvatarUrl as string | undefined,
-      circleNames,
-      createdAt,
-      title:
-        (raw?.title as string) ||
-        (raw?.name as string) ||
-        (raw?.tmdbTitle as string) ||
-        "Untitled",
-      year:
-        typeof raw?.year === "number"
-          ? raw.year
-          : raw?.watchedAt
-          ? Number(String(raw.watchedAt).slice(0, 4))
-          : undefined,
-      type:
-        raw?.type === "tv" || raw?.type === "tv_show" || raw?.type === "Show"
-          ? "Show"
-          : "Movie",
-      mediaType:
-        raw?.type === "tv" || raw?.type === "tv_show" || raw?.type === "Show"
-          ? "tv"
-          : "movie",
-      tmdbId: raw?.tmdbId ? String(raw.tmdbId) : undefined,
-      rating: typeof raw?.rating === "number" ? raw.rating : 0,
-      body,
-      services: services as any,
-      likeCount: typeof raw?.likeCount === "number" ? raw.likeCount : 0,
-      commentCount:
-        typeof raw?.commentCount === "number" ? raw.commentCount : 0,
-      likedByMe: !!raw?.likedByMe,
-      imageUrl:
-        (raw?.imageUrl as string | undefined) ||
-        (raw?.posterUrl as string | undefined),
-    };
-  });
-};
-
-// A loose shape for whatever the /circles endpoint returns.
-// We normalize this into the stricter Circle type used in the UI.
-type RawCircleLike = {
-  _id?: string;
-  id?: string;
-  circleId?: string;
-  name?: string;
-  memberCount?: number;
-  membersCount?: number;
-  circle?: RawCircleLike;
-  memberships?: RawCircleLike[];
-  circles?: RawCircleLike[];
-  items?: RawCircleLike[];
-  data?: RawCircleLike[];
-  [key: string]: any;
-};
-
-const normalizeCircles = (payload: RawCircleLike | RawCircleLike[] | null | undefined): Circle[] => {
-  if (!payload) return [];
-
-  let list: RawCircleLike[] = [];
-
-  // Common shapes we might see from the backend
-  if (Array.isArray(payload)) {
-    list = payload;
-  } else if (Array.isArray(payload.items)) {
-    list = payload.items;
-  } else if (Array.isArray(payload.memberships)) {
-    list = payload.memberships;
-  } else if (Array.isArray(payload.circles)) {
-    list = payload.circles;
-  } else if (Array.isArray(payload.data)) {
-    list = payload.data;
-  } else {
-    // Fallback: maybe it is a single circle-like object
-    list = [payload];
-  }
-
-  const seen = new Set<string>();
-  const result: Circle[] = [];
-
-  for (const entry of list) {
-    const base = (entry.circle as RawCircleLike) || entry;
-
-    const id =
-      (base._id as string | undefined) ||
-      (base.id as string | undefined) ||
-      (base.circleId as string | undefined);
-
-    if (!id || seen.has(id)) continue;
-    seen.add(id);
-
-    result.push({
-      _id: id,
-      name: (base.name as string | undefined) || "Untitled circle",
-      memberCount:
-        typeof base.memberCount === "number"
-          ? base.memberCount
-          : typeof base.membersCount === "number"
-          ? base.membersCount
-          : 0,
-    });
-  }
-
-  return result;
-};
-
-// Normalize whatever the feed endpoint returns into the stricter FeedPost shape
-const normalizeFeedItems = (items: any[], circlesLookup: Map<string, string>): FeedPost[] => {
-  return (items || []).map((raw, idx) => {
-    const id =
-      (raw && (raw.id || raw._id || raw.canonicalId)) ||
-      `tmp-${idx}-${Date.now()}`;
-
-    const circleIds: string[] = Array.isArray(raw?.circles)
-      ? raw.circles.map((c: any) => String(c))
-      : Array.isArray(raw?.circleIds)
-      ? raw.circleIds.map((c: any) => String(c))
-      : [];
-
-    const circleNames =
-      Array.isArray(raw?.circleNames) && raw.circleNames.length
-        ? raw.circleNames
-        : circleIds
-            .map((cid) => circlesLookup.get(cid))
-            .filter((n): n is string => Boolean(n));
-
-    const body =
-      (typeof raw?.body === "string" && raw.body) ||
-      (typeof raw?.comment === "string" && raw.comment) ||
-      "";
-
-    const services: string[] = Array.isArray(raw?.services)
-      ? raw.services
-      : Array.isArray(raw?.playableOnMyServices)
-      ? raw.playableOnMyServices
-      : Array.isArray(raw?.availableOn)
-      ? raw.availableOn
-      : [];
-
-    const createdAt =
-      typeof raw?.createdAt === "string"
-        ? raw.createdAt
-        : typeof raw?.createdAt === "number"
-        ? new Date(raw.createdAt).toISOString()
-        : new Date().toISOString();
-
-    return {
-      _id: String(id),
-      authorId: raw?.authorId ? String(raw.authorId) : undefined,
-      authorName:
-        (raw?.authorName as string) ||
-        (raw?.author as string) ||
-        (raw?.authorId as string) ||
-        "Someone",
-      authorAvatarUrl: raw?.authorAvatarUrl as string | undefined,
-      circleNames,
-      createdAt,
-      title:
-        (raw?.title as string) ||
-        (raw?.name as string) ||
-        (raw?.tmdbTitle as string) ||
-        "Untitled",
-      year:
-        typeof raw?.year === "number"
-          ? raw.year
-          : raw?.watchedAt
-          ? Number(String(raw.watchedAt).slice(0, 4))
-          : undefined,
-      type:
-        raw?.type === "tv" || raw?.type === "tv_show" || raw?.type === "Show"
-          ? "Show"
-          : "Movie",
-      mediaType:
-        raw?.type === "tv" || raw?.type === "tv_show" || raw?.type === "Show"
-          ? "tv"
-          : "movie",
-      tmdbId: raw?.tmdbId ? String(raw.tmdbId) : undefined,
-      rating: typeof raw?.rating === "number" ? raw.rating : 0,
-      body,
-      services: services as any,
-      likeCount: typeof raw?.likeCount === "number" ? raw.likeCount : 0,
-      commentCount:
-        typeof raw?.commentCount === "number" ? raw.commentCount : 0,
-      likedByMe: !!raw?.likedByMe,
-      imageUrl:
-        (raw?.imageUrl as string | undefined) ||
-        (raw?.posterUrl as string | undefined),
-    };
-  });
+  title: string;
+  rating: number;
+  posterUrl?: string;
 };
 
 // A loose shape for whatever the /circles endpoint returns.
@@ -705,7 +555,6 @@ const HomePage: React.FC = () => {
 
   useEffect(() => {
     fetchAll();
-    apiGetUser("/me").then(setMe);
   }, [fetchAll]);
 
   // Load current user id once for author-only actions
