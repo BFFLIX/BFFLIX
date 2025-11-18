@@ -219,6 +219,7 @@ const AiAssistantPage: React.FC = () => {
               <span className="app-nav-icon">🎬</span>
               <span>Viewings</span>
             </button>
+           
             <button
               className="app-nav-item app-nav-item--active"
               type="button"
@@ -227,7 +228,12 @@ const AiAssistantPage: React.FC = () => {
               <span className="app-nav-icon">✨</span>
               <span>AI Assistant</span>
             </button>
-            <button className="app-nav-item">
+            
+            <button
+              className="app-nav-item"
+              type="button"
+              onClick={() => navigate("/profile")}
+            >
               <span className="app-nav-icon">👤</span>
               <span>Profile</span>
             </button>
