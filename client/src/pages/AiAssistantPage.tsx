@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import bfflixLogo from "../assets/bfflix-logo.svg";
 import { apiPost } from "../lib/api";
+import "../styles/AiAssistantPage.css";
 
 type ChatRole = "user" | "assistant";
 
