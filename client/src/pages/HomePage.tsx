@@ -2,7 +2,8 @@
 // src/pages/HomePage.tsx
 import React, { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import bfflixLogo from "../assets/bfflix-logo.svg";
+// import bfflixLogo from "../assets/bfflix-logo.svg";
+// import defaultProfile from "../assets/default-profile.png";
 import { apiGet, apiPost, apiDelete } from "../lib/api";
 import "../styles/HomePage.css";
 
@@ -1135,37 +1136,6 @@ const HomePage: React.FC = () => {
   //comment
   return (
     <div className="app-shell">
-       <header className="app-topbar">
-        <div className="topbar-left">
-          <img src={bfflixLogo} alt="BFFLIX" className="topbar-logo" />
-        </div>
-
-        <div className="topbar-center">
-          <h1>Home</h1>
-        </div>
-
-        <div className="topbar-right">
-          <button className="topbar-profile-btn">
-            <img src={defaultProfile} alt="profile" />
-            <span>{currentUserName || ""}</span>
-          </button>
-        </div>
-      </div>
-      <div className="home-topbar">
-        <h1 className="home-topbar-title">Home</h1>
-        <div className="home-topbar-right">
-          <button
-            type="button"
-            className="profile-chip"
-            onClick={() => navigate("/profile")}
-          >
-            <span className="profile-chip-avatar">👤</span>
-            <span className="profile-chip-name">
-              {currentUserName || "Profile"}
-            </span>
-          </button>
-        </div>
-      </div>
       <div className="app-main-layout">
         {/* Left sidebar */}
         <aside className="app-sidebar">

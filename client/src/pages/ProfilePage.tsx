@@ -1,7 +1,7 @@
 // src/pages/ProfilePage.tsx
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import bfflixLogo from "../assets/bfflix-logo.svg";
+//import bfflixLogo from "../assets/bfflix-logo.svg";
 import defaultAvatar from "../assets/default-avatar.svg";
 import { apiGet, apiPatch } from "../lib/api";
 import { fetchTmdbTitleDetails } from "../lib/TMDBService";
@@ -409,9 +409,9 @@ export default function ProfilePage() {
       <div className="app-main-layout">
         {/* Sidebar (similar to other pages) */}
         <aside className="app-sidebar">
-          <div className="app-sidebar-brand">
+          {/* <div className="app-sidebar-brand">
             <img src={bfflixLogo} alt="BFFLIX" className="app-sidebar-logo-img" />
-          </div>
+          </div> */}
           <nav className="app-sidebar-nav">
             <button className="app-nav-item" onClick={() => navigate("/home")}>
               <span className="app-nav-icon" role="img" aria-hidden="true">

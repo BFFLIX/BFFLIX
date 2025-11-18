@@ -2,7 +2,7 @@
 // src/pages/ViewingsPage.tsx
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import bfflixLogo from "../assets/bfflix-logo.svg";
+//import bfflixLogo from "../assets/bfflix-logo.svg";
 import { apiGet, apiPost, apiDelete } from "../lib/api";
 import {
   searchTmdbTitles,
@@ -363,13 +363,13 @@ const ViewingsPage: React.FC = () => {
       <div className="app-main-layout">
         {/* LEFT SIDEBAR */}
         <aside className="app-sidebar">
-          <div className="app-sidebar-brand">
+          {/* <div className="app-sidebar-brand">
             <img
               src={bfflixLogo}
               alt="BFFLIX"
               className="app-sidebar-logo-img"
             />
-          </div>
+          </div> */}
 
           <nav className="app-sidebar-nav">
             <button
@@ -429,9 +429,9 @@ const ViewingsPage: React.FC = () => {
 
         {/* CENTER COLUMN */}
         <main className="app-feed">
-          <header className="feed-header">
+          {/* <header className="feed-header">
             <h1 className="feed-title">Viewings</h1>
-          </header>
+          </header> */}
 
           <div className="viewings-page">
             <div className="viewings-header">
