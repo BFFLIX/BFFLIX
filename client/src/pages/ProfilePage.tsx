@@ -4,7 +4,7 @@ import { useNavigate } from "react-router-dom";
 import TopBar from "../components/TopBar";
 import LeftSidebar from "../components/LeftSidebar";
 import defaultAvatar from "../assets/default-avatar.svg";
-import { apiGet, apiPatch } from "../lib/api";
+import { apiGet, apiPatch, apiPut } from "../lib/api";
 import { fetchTmdbTitleDetails } from "../lib/TMDBService";
 
 // ===== Types and helpers =====
@@ -39,52 +39,35 @@ type ProfileViewing = Viewing & {
   safeRating: number;
 };
 
-const SERVICE_OPTIONS = [
-  { key: "netflix", label: "Netflix" },
-  { key: "hulu", label: "Hulu" },
-  { key: "max", label: "Max" },
-  { key: "prime", label: "Prime Video" },
-  { key: "disney", label: "Disney+" },
-  { key: "peacock", label: "Peacock" },
-] as const;
-
-type ServiceKey = (typeof SERVICE_OPTIONS)[number]["key"];
-
-
-const SERVICE_KEY_SET = new Set<ServiceKey>(
-  SERVICE_OPTIONS.map((option) => option.key)
-);
-
-const SERVICE_LABEL_MAP: Record<ServiceKey, string> = SERVICE_OPTIONS.reduce(
-  (acc, option) => {
-    acc[option.key] = option.label;
-    return acc;
-  },
-  {} as Record<ServiceKey, string>
-);
-
 type UserResponse = {
   name: string;
   avatarUrl?: string | null;
-  services?: ServiceKey[] | null;
 };
 
-const orderServices = (services: Iterable<ServiceKey>): ServiceKey[] => {
-  const set = new Set<ServiceKey>(services);
-  return SERVICE_OPTIONS.map((option) => option.key).filter((key) => set.has(key));
+type StreamingServiceDoc = {
+  _id: string;
+  name: string;
+  tmdbProviderId?: number;
+  displayPriority?: number;
+  logoPath?: string | null;
 };
 
-const normalizeServices = (list: unknown): ServiceKey[] => {
-  if (!Array.isArray(list)) return [];
-  const matches: ServiceKey[] = [];
-  for (const item of list) {
-    if (typeof item !== "string") continue;
-    const normalized = item.toLowerCase() as ServiceKey;
-    if (SERVICE_KEY_SET.has(normalized)) {
-      matches.push(normalized);
-    }
-  }
-  return orderServices(matches);
+type StreamingServiceResponse = {
+  success: boolean;
+  data: StreamingServiceDoc[];
+};
+
+type UserStreamingServicesResponse = {
+  success: boolean;
+  data: StreamingServiceDoc[];
+};
+
+const sortServices = (services: StreamingServiceDoc[]) => {
+  return [...services].sort((a, b) => {
+    const priorityDiff = (b.displayPriority ?? 0) - (a.displayPriority ?? 0);
+    if (priorityDiff !== 0) return priorityDiff;
+    return a.name.localeCompare(b.name);
+  });
 };
 
 const MAX_RECENT_VIEWINGS = 3;
@@ -165,8 +148,14 @@ export default function ProfilePage() {
   const [editAvatarUrl, setEditAvatarUrl] = useState("");
   const [savingProfile, setSavingProfile] = useState(false);
   const [profileSaveError, setProfileSaveError] = useState<string | null>(null);
-  const [userServices, setUserServices] = useState<ServiceKey[]>([]);
-  const [editServices, setEditServices] = useState<ServiceKey[]>([]);
+  const [userServices, setUserServices] = useState<StreamingServiceDoc[]>([]);
+  const [userServicesLoading, setUserServicesLoading] = useState(false);
+  const [userServicesError, setUserServicesError] = useState<string | null>(null);
+  const [editServiceIds, setEditServiceIds] = useState<string[]>([]);
+  const [allServices, setAllServices] = useState<StreamingServiceDoc[]>([]);
+  const [allServicesLoading, setAllServicesLoading] = useState(false);
+  const [allServicesError, setAllServicesError] = useState<string | null>(null);
+  const [serviceSearch, setServiceSearch] = useState("");
 
   // Circles state
   const [circles, setCircles] = useState<Circle[]>([]);
@@ -187,6 +176,110 @@ export default function ProfilePage() {
   });
 
   const publicCircles = useMemo(() => circles.filter(isCirclePublic), [circles]);
+  const serviceMap = useMemo(() => {
+    const map = new Map<string, StreamingServiceDoc>();
+    allServices.forEach((svc) => {
+      map.set(String(svc._id), svc);
+    });
+    return map;
+  }, [allServices]);
+
+  const popularServices = useMemo(() => sortServices(allServices).slice(0, 8), [allServices]);
+
+  const filteredServices = useMemo(() => {
+    const term = serviceSearch.trim().toLowerCase();
+    const base = term
+      ? allServices.filter((svc) => svc.name.toLowerCase().includes(term))
+      : allServices;
+    return sortServices(base).slice(0, 20);
+  }, [allServices, serviceSearch]);
+
+  const selectedServices = useMemo(
+    () =>
+      editServiceIds
+        .map((id) => serviceMap.get(id))
+        .filter((svc): svc is StreamingServiceDoc => Boolean(svc)),
+    [editServiceIds, serviceMap]
+  );
+
+  const mergeServicesIntoCatalog = (servicesToMerge: StreamingServiceDoc[]) => {
+    if (!servicesToMerge.length) return;
+    setAllServices((prev) => {
+      const merged = new Map<string, StreamingServiceDoc>();
+      prev.forEach((svc) => merged.set(String(svc._id), svc));
+      let changed = false;
+      servicesToMerge.forEach((svc) => {
+        const key = String(svc._id);
+        if (!merged.has(key)) {
+          merged.set(key, svc);
+          changed = true;
+        }
+      });
+      return changed ? sortServices(Array.from(merged.values())) : prev;
+    });
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    const fetchAllServices = async () => {
+      try {
+        setAllServicesLoading(true);
+        setAllServicesError(null);
+        const res = await apiGet<StreamingServiceResponse>("/api/streaming-services");
+        if (cancelled) return;
+        const docs = Array.isArray(res?.data) ? res.data : [];
+        setAllServices(sortServices(docs));
+      } catch (err: any) {
+        if (!cancelled) {
+          console.error("Failed to load streaming services catalog", err);
+          setAllServicesError(
+            err.message || "Failed to load streaming services catalog."
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setAllServicesLoading(false);
+        }
+      }
+    };
+
+    fetchAllServices();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const fetchUserStreamingServices = async () => {
+      try {
+        setUserServicesLoading(true);
+        setUserServicesError(null);
+        const res = await apiGet<UserStreamingServicesResponse>(
+          "/api/users/me/streaming-services"
+        );
+        if (cancelled) return;
+        const docs = Array.isArray(res?.data) ? sortServices(res.data) : [];
+        setUserServices(docs);
+        setEditServiceIds(docs.map((svc) => String(svc._id)));
+        mergeServicesIntoCatalog(docs);
+      } catch (err: any) {
+        if (!cancelled) {
+          console.error("Failed to load your streaming services", err);
+          setUserServicesError(err.message || "Failed to load streaming services.");
+        }
+      } finally {
+        if (!cancelled) {
+          setUserServicesLoading(false);
+        }
+      }
+    };
+
+    fetchUserStreamingServices();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Fetch /me
   useEffect(() => {
@@ -197,9 +290,6 @@ export default function ProfilePage() {
         const res = await apiGet<UserResponse>("/me");
         setUserName(res.name);
         setAvatarUrl(res.avatarUrl || "");
-        const normalizedServices = normalizeServices(res.services);
-        setUserServices(normalizedServices);
-        setEditServices(normalizedServices);
       } catch (err: any) {
         console.error("Failed to load user", err);
         setUserError(err.message || "Failed to load user data.");
@@ -324,7 +414,8 @@ export default function ProfilePage() {
     setIsEditingProfile(true);
     setEditName(userName);
     setEditAvatarUrl(avatarUrl);
-    setEditServices(userServices);
+    setEditServiceIds(userServices.map((svc) => String(svc._id)));
+    setServiceSearch("");
     setProfileSaveError(null);
   };
 
@@ -333,12 +424,16 @@ export default function ProfilePage() {
     setProfileSaveError(null);
   };
 
-  const toggleServiceSelection = (serviceKey: ServiceKey) => {
-    setEditServices((prev) => {
-      const next = prev.includes(serviceKey)
-        ? prev.filter((key) => key !== serviceKey)
-        : [...prev, serviceKey];
-      return orderServices(next);
+  const toggleServiceSelection = (serviceId: string) => {
+    setEditServiceIds((prev) => {
+      const exists = prev.includes(serviceId);
+      const next = exists ? prev.filter((id) => id !== serviceId) : [...prev, serviceId];
+      const knownDocs = next
+        .map((id) => serviceMap.get(id))
+        .filter((svc): svc is StreamingServiceDoc => Boolean(svc));
+      const ordered = sortServices(knownDocs).map((svc) => String(svc._id));
+      const missing = next.filter((id) => !ordered.includes(id));
+      return [...ordered, ...missing];
     });
   };
 
@@ -352,17 +447,29 @@ export default function ProfilePage() {
     try {
       setSavingProfile(true);
       setProfileSaveError(null);
-      const payload = {
+      const profilePayload = {
         name: editName.trim(),
         avatarUrl: editAvatarUrl.trim(),
-        services: editServices,
       };
-      const updated = await apiPatch<UserResponse>("/me", payload);
-      setUserName(updated.name);
-      setAvatarUrl(updated.avatarUrl || "");
-      const normalizedServices = normalizeServices(updated.services);
+
+      const streamingPayload = {
+        serviceIds: editServiceIds,
+      };
+
+      const [updatedProfile, updatedServices] = await Promise.all([
+        apiPatch<UserResponse>("/me", profilePayload),
+        apiPut<UserStreamingServicesResponse>("/api/users/me/streaming-services", streamingPayload),
+      ]);
+
+      setUserName(updatedProfile.name);
+      setAvatarUrl(updatedProfile.avatarUrl || "");
+
+      const normalizedServices = Array.isArray(updatedServices?.data)
+        ? sortServices(updatedServices.data)
+        : [];
       setUserServices(normalizedServices);
-      setEditServices(normalizedServices);
+      setEditServiceIds(normalizedServices.map((svc) => String(svc._id)));
+      mergeServicesIntoCatalog(normalizedServices);
       setIsEditingProfile(false);
     } catch (err: any) {
       setProfileSaveError(err.message || "Failed to update profile.");
@@ -494,16 +601,18 @@ export default function ProfilePage() {
                       <p className="text-xs font-medium text-slate-300">
                         Streaming services you use
                       </p>
-                      {userLoading ? (
+                      {userServicesLoading ? (
                         <p className="text-xs text-slate-400">Loading services...</p>
+                      ) : userServicesError ? (
+                        <p className="text-xs text-rose-300">{userServicesError}</p>
                       ) : userServices.length > 0 ? (
                         <div className="flex flex-wrap gap-2">
                           {userServices.map((service) => (
                             <span
-                              key={service}
+                              key={service._id}
                               className="inline-flex items-center rounded-full bg-slate-800/80 px-3 py-1 text-[0.7rem] font-medium text-slate-100 ring-1 ring-white/10"
                             >
-                              {SERVICE_LABEL_MAP[service]}
+                              {service.name}
                             </span>
                           ))}
                         </div>
@@ -593,27 +702,114 @@ export default function ProfilePage() {
                       </div>
                     </div>
 
-                    <div className="space-y-2 text-xs text-slate-200 md:col-span-2">
+                    <div className="space-y-3 text-xs text-slate-200 md:col-span-2">
                       <span className="font-medium">Streaming services</span>
-                      <div className="flex flex-wrap gap-2">
-                        {SERVICE_OPTIONS.map((option) => {
-                          const isActive = editServices.includes(option.key);
-                          return (
-                            <button
-                              type="button"
-                              key={option.key}
-                              onClick={() => toggleServiceSelection(option.key)}
-                              aria-pressed={isActive}
-                              className={
-                                isActive
-                                  ? "inline-flex items-center rounded-full bg-rose-500/90 px-3 py-1 text-[0.7rem] font-semibold text-white shadow-sm ring-1 ring-rose-300/80"
-                                  : "inline-flex items-center rounded-full bg-slate-800/80 px-3 py-1 text-[0.7rem] font-medium text-slate-100 ring-1 ring-white/10 hover:bg-slate-700"
-                              }
-                            >
-                              {option.label}
-                            </button>
-                          );
-                        })}
+                      <div className="space-y-3 rounded-xl bg-slate-900/40 p-3">
+                        <label className="space-y-1 text-[0.7rem] text-slate-300">
+                          <span>Search catalog</span>
+                          <input
+                            type="search"
+                            value={serviceSearch}
+                            onChange={(event) => setServiceSearch(event.target.value)}
+                            placeholder="Search Netflix, Crunchyroll, Apple TV+, etc."
+                            className="w-full rounded-lg border border-slate-700 bg-slate-950/60 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-rose-400 focus:outline-none focus:ring-1 focus:ring-rose-400"
+                          />
+                        </label>
+
+                        {selectedServices.length > 0 && (
+                          <div className="space-y-1">
+                            <p className="text-[0.65rem] uppercase tracking-wide text-slate-400">
+                              Selected
+                            </p>
+                            <div className="flex flex-wrap gap-2">
+                              {selectedServices.map((service) => (
+                                <button
+                                  type="button"
+                                  key={`selected-${service._id}`}
+                                  onClick={() => toggleServiceSelection(String(service._id))}
+                                  aria-label={`Remove ${service.name}`}
+                                  className="inline-flex items-center gap-1 rounded-full bg-rose-500/90 px-3 py-1 text-[0.7rem] font-semibold text-white shadow-sm ring-1 ring-rose-300/80 transition hover:bg-rose-400"
+                                >
+                                  {service.name}
+                                  <span aria-hidden="true">×</span>
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="space-y-1">
+                          <p className="text-[0.65rem] uppercase tracking-wide text-slate-400">
+                            Popular choices
+                          </p>
+                          <div className="flex flex-wrap gap-2">
+                            {popularServices.slice(0, 8).map((service) => {
+                              const isActive = editServiceIds.includes(String(service._id));
+                              return (
+                                <button
+                                  type="button"
+                                  key={`popular-${service._id}`}
+                                  onClick={() => toggleServiceSelection(String(service._id))}
+                                  aria-pressed={isActive}
+                                  className={
+                                    isActive
+                                      ? "inline-flex items-center rounded-full bg-rose-500/90 px-3 py-1 text-[0.7rem] font-semibold text-white shadow-sm ring-1 ring-rose-300/80"
+                                      : "inline-flex items-center rounded-full bg-slate-800/80 px-3 py-1 text-[0.7rem] font-medium text-slate-100 ring-1 ring-white/10 hover:bg-slate-700"
+                                  }
+                                >
+                                  {service.name}
+                                </button>
+                              );
+                            })}
+                            {popularServices.length === 0 && !allServicesLoading && (
+                              <p className="text-[0.7rem] text-slate-400">
+                                No providers found. Try running the TMDB sync script.
+                              </p>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="space-y-1">
+                          <p className="text-[0.65rem] uppercase tracking-wide text-slate-400">
+                            {serviceSearch ? "Search results" : "Browse catalog"}
+                          </p>
+                          {allServicesLoading ? (
+                            <p className="text-[0.7rem] text-slate-400">
+                              Loading streaming services...
+                            </p>
+                          ) : filteredServices.length > 0 ? (
+                            <div className="flex max-h-48 flex-wrap gap-2 overflow-y-auto pr-1">
+                              {filteredServices.map((service) => {
+                                const isActive = editServiceIds.includes(String(service._id));
+                                return (
+                                  <button
+                                    type="button"
+                                    key={`search-${service._id}`}
+                                    onClick={() => toggleServiceSelection(String(service._id))}
+                                    aria-pressed={isActive}
+                                    className={
+                                      isActive
+                                        ? "inline-flex items-center rounded-full bg-rose-500/90 px-3 py-1 text-[0.7rem] font-semibold text-white shadow-sm ring-1 ring-rose-300/80"
+                                        : "inline-flex items-center rounded-full bg-slate-800/80 px-3 py-1 text-[0.7rem] font-medium text-slate-100 ring-1 ring-white/10 hover:bg-slate-700"
+                                    }
+                                  >
+                                    {service.name}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          ) : (
+                            <p className="text-[0.7rem] text-slate-400">
+                              {serviceSearch
+                                ? "No providers match your search."
+                                : "No providers available yet."}
+                            </p>
+                          )}
+                        </div>
+
+                        {allServicesError && (
+                          <p className="text-[0.65rem] text-rose-300">{allServicesError}</p>
+                        )}
                       </div>
                       <small className="block text-[0.68rem] text-slate-400">
                         Pick every platform you actively use so we can personalize your feed.

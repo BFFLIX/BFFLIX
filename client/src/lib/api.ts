@@ -98,3 +98,10 @@ export function apiPatch<T = Json>(path: string, body?: any) {
 export function apiDelete<T = Json>(path: string) {
   return request<T>(path, { method: "DELETE" });
 }
+
+export function apiPut<T = Json>(path: string, body?: any) {
+  return request<T>(path, {
+    method: "PUT",
+    body: body ? JSON.stringify(body) : undefined,
+  });
+}
