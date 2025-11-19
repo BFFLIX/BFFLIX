@@ -623,15 +623,10 @@ r.post("/recommendations", requireAuth, async (req: AuthedRequest, res) => {
   ]
   `.trim();
 
-    // 6.1) Pull popular items from the user's circles to bias/merge with AI output
-    const feedCandidates = await getFeedTopCandidates(userId, 30, limit * 2);
-
-    // 7) Call LLM and cap to limit
+    // 6.1) We now rely solely on AI candidates (no explicit feed blending here).
     const raw = await askLLMJson(llmPrompt);
     const llmArray = Array.isArray(raw) ? raw : [];
     const trimmed = llmArray.slice(0, limit);
-
-    // Build arrays separately
     const aiCandidates: Array<{
       title: string;
       type?: "movie" | "tv";
@@ -653,90 +648,25 @@ r.post("/recommendations", requireAuth, async (req: AuthedRequest, res) => {
       aiCandidates.push(payload);
     }
 
-    const feedIdCandidates: Array<{ tmdbId: string; type: "movie" | "tv" }> =
-      feedCandidates.map((f) => ({ tmdbId: f.tmdbId, type: f.type }));
-
-    // Order depends on preferFeed
-    const merged: Array<{
-      title?: string;
-      type?: "movie" | "tv";
-      reason?: string;
-      matchScore?: number;
-      tmdbId?: string;
-    }> = preferFeed
-      ? [...feedIdCandidates, ...aiCandidates]
-      : [...aiCandidates, ...feedIdCandidates];
-
-    // 8) Enrich all candidates:
-    //  - If we have a title (AI), resolve via search and enrich
-    //  - If we already have tmdbId+type (feed), enrich directly without search
     const enriched = (
       await Promise.all(
-        merged.map(async (cand) => {
-          if (cand.tmdbId && cand.type) {
-            // direct enrich from known id/type
-            const providers = await getPlayableServicesForTitle(
-              cand.type,
-              cand.tmdbId,
-              "US"
-            );
-            const playableOn = intersect(providers, userServices);
-            const details =
-              cand.type === "movie"
-                ? await tmdb
-                    .getMovieDetails(Number(cand.tmdbId))
-                    .catch(() => null)
-                : await tmdb
-                    .getTVDetails(Number(cand.tmdbId))
-                    .catch(() => null);
-
-            if (!details) return null;
-
-            const poster = tmdb.getPosterURL(details.poster_path, "w500");
-            return {
-              tmdbId: String(details.id),
-              type: cand.type,
-              title:
-                cand.type === "movie"
-                  ? details.title || details.name
-                  : details.name || details.title,
-              year:
-                (details.release_date || details.first_air_date || "").slice(
-                  0,
-                  4
-                ) || null,
-              overview: details.overview ?? null,
-              poster,
-              providers,
-              playableOnMyServices: playableOn.length > 0,
-              playableOn,
-              reason: cand.reason ?? null,
-              matchScore:
-                typeof cand.matchScore === "number"
-                  ? cand.matchScore
-                  : null,
-              popularity: details.popularity ?? null,
-              voteAverage: details.vote_average ?? null,
-            };
-          } else if (cand.title) {
-            const input = {
-              title: cand.title as string,
-              ...(cand.type ? { type: cand.type as "movie" | "tv" } : {}),
-              ...(typeof cand.reason === "string"
-                ? { reason: cand.reason }
-                : {}),
+        aiCandidates.map((cand) =>
+          resolveAndEnrich(
+            {
+              title: cand.title,
+              ...(cand.type ? { type: cand.type } : {}),
+              ...(typeof cand.reason === "string" ? { reason: cand.reason } : {}),
               ...(typeof cand.matchScore === "number"
                 ? { matchScore: cand.matchScore }
                 : {}),
-            };
-            return resolveAndEnrich(input, userServices).catch(() => null);
-          }
-          return null;
-        })
+            },
+            userServices
+          ).catch(() => null)
+        )
       )
     ).filter(Boolean) as Array<any>;
 
-    // Deduplicate by (type, tmdbId) keeping the first occurrence (AI-priority, then feed)
+    // Deduplicate by (type, tmdbId) keeping the first occurrence.
     const seen = new Set<string>();
     const deduped: any[] = [];
     for (const item of enriched) {
@@ -746,7 +676,7 @@ r.post("/recommendations", requireAuth, async (req: AuthedRequest, res) => {
       deduped.push(item);
     }
 
-    // Now cap to `limit` after merging
+    // Cap to `limit` after enrichment and de-duplication
     const finalResults = deduped.slice(0, limit);
 
     // If nothing could be resolved, return a friendly fallback
@@ -760,7 +690,7 @@ r.post("/recommendations", requireAuth, async (req: AuthedRequest, res) => {
           {
             type: "conversation",
             message:
-              "I couldn't resolve those picks. Want trending suggestions or a short list by genre instead?",
+              "I couldn't resolve any solid recommendations from that. Want trending suggestions or a short list by genre instead?",
           },
         ],
       });
@@ -780,7 +710,7 @@ r.post("/recommendations", requireAuth, async (req: AuthedRequest, res) => {
       );
     }
 
-    res.json({
+    return res.json({
       query,
       cached: false,
       basedOn: recentViewings.length,

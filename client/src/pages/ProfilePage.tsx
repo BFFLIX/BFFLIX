@@ -1,13 +1,16 @@
 // src/pages/ProfilePage.tsx
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import bfflixLogo from "../assets/bfflix-logo.svg";
+import TopBar from "../components/TopBar";
+import LeftSidebar from "../components/LeftSidebar";
 import defaultAvatar from "../assets/default-avatar.svg";
 import { apiGet, apiPatch } from "../lib/api";
 import { fetchTmdbTitleDetails } from "../lib/TMDBService";
-import "../styles/ProfilePage.css";
+
+// ===== Types and helpers =====
 
 type CircleVisibility = "private" | "public";
+
 type Circle = {
   id?: string;
   _id?: string;
@@ -17,6 +20,7 @@ type Circle = {
   circle?: Circle;
   [key: string]: any;
 };
+
 type Viewing = {
   _id: string;
   type?: string;
@@ -35,12 +39,6 @@ type ProfileViewing = Viewing & {
   safeRating: number;
 };
 
-type UserResponse = {
-  name: string;
-  avatarUrl?: string | null;
-  services?: ServiceKey[] | null;
-};
-
 const SERVICE_OPTIONS = [
   { key: "netflix", label: "Netflix" },
   { key: "hulu", label: "Hulu" },
@@ -52,11 +50,24 @@ const SERVICE_OPTIONS = [
 
 type ServiceKey = (typeof SERVICE_OPTIONS)[number]["key"];
 
-const SERVICE_KEY_SET = new Set<ServiceKey>(SERVICE_OPTIONS.map((option) => option.key));
-const SERVICE_LABEL_MAP = SERVICE_OPTIONS.reduce((acc, option) => {
-  acc[option.key] = option.label;
-  return acc;
-}, {} as Record<ServiceKey, string>);
+
+const SERVICE_KEY_SET = new Set<ServiceKey>(
+  SERVICE_OPTIONS.map((option) => option.key)
+);
+
+const SERVICE_LABEL_MAP: Record<ServiceKey, string> = SERVICE_OPTIONS.reduce(
+  (acc, option) => {
+    acc[option.key] = option.label;
+    return acc;
+  },
+  {} as Record<ServiceKey, string>
+);
+
+type UserResponse = {
+  name: string;
+  avatarUrl?: string | null;
+  services?: ServiceKey[] | null;
+};
 
 const orderServices = (services: Iterable<ServiceKey>): ServiceKey[] => {
   const set = new Set<ServiceKey>(services);
@@ -79,7 +90,6 @@ const normalizeServices = (list: unknown): ServiceKey[] => {
 const MAX_RECENT_VIEWINGS = 3;
 const MAX_AVATAR_BYTES = 600 * 1024; // ~600KB
 const VIEWINGS_VISIBILITY_KEY = "profile:viewingsVisibility";
-
 const DATA_URL_REGEX = /^data:image\/[a-zA-Z]+;base64,/;
 
 const getCircleBase = (circle: Circle): Circle => {
@@ -139,6 +149,8 @@ function formatViewingTypeLabel(type?: string) {
   if (normalized === "tv") return "Show";
   return "";
 }
+
+// ===== Component =====
 
 export default function ProfilePage() {
   const navigate = useNavigate();
@@ -405,425 +417,445 @@ export default function ProfilePage() {
   };
 
   return (
-    <div className="app-shell">
-      <div className="app-main-layout">
-        {/* Sidebar (similar to other pages) */}
-        <aside className="app-sidebar">
-          <div className="app-sidebar-brand">
-            <img src={bfflixLogo} alt="BFFLIX" className="app-sidebar-logo-img" />
-          </div>
-          <nav className="app-sidebar-nav">
-            <button className="app-nav-item" onClick={() => navigate("/home")}>
-              <span className="app-nav-icon" role="img" aria-hidden="true">
-                🏠
-              </span>
-              <span>Home</span>
-            </button>
-            <button className="app-nav-item" onClick={() => navigate("/circles")}>
-              <span className="app-nav-icon" role="img" aria-hidden="true">
-                👥
-              </span>
-              <span>Circles</span>
-            </button>
-            <button className="app-nav-item" onClick={() => navigate("/viewings")}>
-              <span className="app-nav-icon" role="img" aria-hidden="true">
-                🎬
-              </span>
-              <span>Viewings</span>
-            </button>
-            <button className="app-nav-item" onClick={() => navigate("/ai")}>
-              <span className="app-nav-icon" role="img" aria-hidden="true">
-                ✨
-              </span>
-              <span>AI Assistant</span>
-            </button>
-            <button className="app-nav-item app-nav-item--active">
-              <span className="app-nav-icon" role="img" aria-hidden="true">
-                👤
-              </span>
-              <span>Profile</span>
-            </button>
-          </nav>
-          <button
-            className="app-logout-button"
-            onClick={() => {
-              localStorage.removeItem("token");
-              localStorage.removeItem("authToken");
-              sessionStorage.removeItem("token");
-              sessionStorage.removeItem("authToken");
-              localStorage.clear();
-              sessionStorage.clear();
-              navigate("/login");
-            }}
-          >
-            Log out
-          </button>
-        </aside>
+    <div className="min-h-screen bg-bfflix-navy text-slate-50">
+      <TopBar />
+      <div className="flex">
+        <LeftSidebar />
 
-        {/* Main content */}
-        <main className="app-feed profile-page">
-          <div className="profile-main">
-            {/* Profile Header */}
-            <section className="profile-header-card">
-              <div className="profile-avatar">
-                {avatarUrl ? (
-                  <img
-                    src={avatarUrl}
-                    alt={`${userName || "User"} avatar`}
-                    className="profile-avatar-img profile-avatar-img--user"
-                  />
-                ) : (
-                  <>
-                    <img
-                      src={defaultAvatar}
-                      alt="Default profile avatar"
-                      className="profile-avatar-img"
-                    />
-                    <span className="profile-avatar-initial">{profileInitial}</span>
-                  </>
-                )}
-              </div>
-
-              <div className="profile-info">
-                <div className="profile-title-row">
-                  <h2 className="profile-title">Your Profile</h2>
-                  {userLoading && (
-                    <span className="profile-loading">Loading...</span>
-                  )}
-                  {userError && <span className="profile-error">{userError}</span>}
-                </div>
-
-                {!userLoading && !userError && (
-                  <p className="profile-name">
-                    Welcome back, {userName || "BFFLixer"}!
-                  </p>
-                )}
-                <p className="profile-subtitle">
-                  Keep tabs on what you are watching and the circles you hang out
-                  in.
-                </p>
-
-                <div className="profile-stats">
-                  <div className="profile-stat-item">
-                    <div className="stat-value">{publicCircles.length}</div>
-                    <div className="stat-label">Public circles</div>
-                  </div>
-                  <div className="profile-stat-item">
-                    <div className="stat-value">{viewingsCount}</div>
-                    <div className="stat-label">Viewings logged</div>
-                  </div>
-                </div>
-
-                <div className="profile-services-summary">
-                  <span className="profile-services-summary-label">Streaming services you use</span>
-                  {userLoading ? (
-                    <p className="profile-services-summary-empty">Loading services...</p>
-                  ) : userServices.length > 0 ? (
-                    <div className="profile-services-summary-list">
-                      {userServices.map((service) => (
-                        <span key={service} className="profile-service-chip">
-                          {SERVICE_LABEL_MAP[service]}
-                        </span>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="profile-services-summary-empty">
-                      You haven't selected any streaming services yet.
-                    </p>
-                  )}
-                </div>
-
-                <div className="profile-header-actions">
-                  {!isEditingProfile && (
-                    <button
-                      type="button"
-                      className="profile-edit-button"
-                      onClick={openEditProfile}
-                    >
-                      Edit profile
-                    </button>
-                  )}
-                </div>
-              </div>
-            </section>
-
-            {isEditingProfile && (
-              <form className="profile-edit-card" onSubmit={handleSaveProfile}>
-                <div className="profile-edit-grid">
-                  <label className="profile-edit-field">
-                    <span className="profile-edit-label">Display name</span>
-                    <input
-                      type="text"
-                      value={editName}
-                      className="profile-edit-input"
-                      onChange={(e) => setEditName(e.target.value)}
-                      maxLength={60}
-                      required
-                    />
-                  </label>
-                  <label className="profile-edit-field">
-                    <span className="profile-edit-label">Upload photo</span>
-                    <input
-                      type="file"
-                      accept="image/png,image/jpeg,image/jpg,image/gif,image/webp,image/bmp"
-                      className="profile-edit-file"
-                      onChange={handleAvatarFileChange}
-                    />
-                    <small className="profile-edit-hint">
-                      Supported formats: PNG, JPG, GIF, WEBP (max 600KB). Leave empty or
-                      clear to keep the default avatar.
-                    </small>
-                  </label>
-                  <div className="profile-edit-field">
-                    <span className="profile-edit-label">Preview</span>
-                    <div className="profile-edit-avatar-preview">
-                      {editAvatarUrl ? (
-                        <img src={editAvatarUrl} alt="Avatar preview" />
-                      ) : avatarUrl ? (
-                        <img src={avatarUrl} alt="Avatar preview" />
-                      ) : (
-                        <div className="profile-edit-avatar-placeholder">
+        <main className="flex-1 px-4 py-6 pt-16 sm:px-6 lg:px-8">
+          <div className="mx-auto flex max-w-6xl flex-col gap-8 lg:flex-row">
+            {/* Left column: profile summary and edit */}
+            <section className="w-full space-y-6 lg:w-2/5">
+              <div className="rounded-2xl bg-slate-900/70 p-6 shadow-xl ring-1 ring-white/5">
+                <div className="flex items-start gap-4">
+                  <div className="relative h-20 w-20 flex-shrink-0">
+                    {avatarUrl ? (
+                      <img
+                        src={avatarUrl}
+                        alt={`${userName || "User"} avatar`}
+                        className="h-20 w-20 rounded-full object-cover shadow-lg"
+                      />
+                    ) : (
+                      <div className="relative h-20 w-20">
+                        <img
+                          src={defaultAvatar}
+                          alt="Default profile avatar"
+                          className="h-20 w-20 rounded-full object-cover opacity-60"
+                        />
+                        <span className="absolute inset-0 flex items-center justify-center text-2xl font-semibold text-slate-100">
                           {profileInitial}
-                        </div>
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex-1">
+                    <div className="flex items-center gap-3">
+                      <h2 className="text-lg font-semibold tracking-tight text-slate-50">
+                        Your profile
+                      </h2>
+                      {userLoading && (
+                        <span className="text-xs text-slate-400">Loading...</span>
+                      )}
+                      {userError && (
+                        <span className="text-xs text-rose-400">{userError}</span>
                       )}
                     </div>
-                    <div className="profile-edit-avatar-actions">
-                      <button
-                        type="button"
-                        className="profile-edit-clear-avatar"
-                        onClick={clearAvatarSelection}
-                      >
-                        Use default avatar
-                      </button>
-                    </div>
-                  </div>
-                  <div className="profile-edit-field profile-edit-services">
-                    <span className="profile-edit-label">Streaming services</span>
-                    <div className="profile-service-button-grid">
-                      {SERVICE_OPTIONS.map((option) => {
-                        const isActive = editServices.includes(option.key);
-                        return (
-                          <button
-                            type="button"
-                            key={option.key}
-                            className={
-                              isActive
-                                ? "profile-service-button profile-service-button--active"
-                                : "profile-service-button"
-                            }
-                            onClick={() => toggleServiceSelection(option.key)}
-                            aria-pressed={isActive}
-                          >
-                            {option.label}
-                          </button>
-                        );
-                      })}
-                    </div>
-                    <small className="profile-edit-hint">
-                      Pick every platform you actively use so we can personalize your feed.
-                    </small>
-                  </div>
-                </div>
-                {profileSaveError && (
-                  <div className="profile-edit-error">{profileSaveError}</div>
-                )}
-                <div className="profile-edit-actions">
-                  <button
-                    type="button"
-                    className="profile-edit-cancel"
-                    onClick={closeEditProfile}
-                    disabled={savingProfile}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    className="profile-edit-save"
-                    disabled={savingProfile}
-                  >
-                    {savingProfile ? "Saving..." : "Save changes"}
-                  </button>
-                </div>
-              </form>
-            )}
 
-            {/* Circles Section */}
-            <section className="profile-section profile-circles-section">
-              <div className="profile-section-header">
-                <div>
-                  <h3 className="profile-section-title">My Circles</h3>
-                  <p className="profile-section-subtitle">
-                    Quick access to the communities you care about most.
-                  </p>
+                    {!userLoading && !userError && (
+                      <p className="mt-1 text-sm text-slate-200">
+                        Welcome back, {userName || "BFFLixer"}!
+                      </p>
+                    )}
+                    <p className="mt-1 text-xs text-slate-400">
+                      Keep tabs on what you are watching and the circles you hang out in.
+                    </p>
+
+                    <div className="mt-4 grid grid-cols-2 gap-3 text-center text-xs">
+                      <div className="rounded-xl bg-slate-800/80 px-3 py-2">
+                        <div className="text-lg font-semibold text-slate-50">
+                          {publicCircles.length}
+                        </div>
+                        <div className="text-[0.7rem] uppercase tracking-wide text-slate-400">
+                          Public circles
+                        </div>
+                      </div>
+                      <div className="rounded-xl bg-slate-800/80 px-3 py-2">
+                        <div className="text-lg font-semibold text-slate-50">
+                          {viewingsCount}
+                        </div>
+                        <div className="text-[0.7rem] uppercase tracking-wide text-slate-400">
+                          Viewings logged
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="mt-4 space-y-2">
+                      <p className="text-xs font-medium text-slate-300">
+                        Streaming services you use
+                      </p>
+                      {userLoading ? (
+                        <p className="text-xs text-slate-400">Loading services...</p>
+                      ) : userServices.length > 0 ? (
+                        <div className="flex flex-wrap gap-2">
+                          {userServices.map((service) => (
+                            <span
+                              key={service}
+                              className="inline-flex items-center rounded-full bg-slate-800/80 px-3 py-1 text-[0.7rem] font-medium text-slate-100 ring-1 ring-white/10"
+                            >
+                              {SERVICE_LABEL_MAP[service]}
+                            </span>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-xs text-slate-400">
+                          You have not selected any streaming services yet.
+                        </p>
+                      )}
+                    </div>
+
+                    {!isEditingProfile && (
+                      <div className="mt-4">
+                        <button
+                          type="button"
+                          onClick={openEditProfile}
+                          className="inline-flex items-center rounded-full bg-rose-500 px-4 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-rose-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500/70 focus-visible:ring-offset-2 focus-visible:ring-offset-bfflix-navy"
+                        >
+                          Edit profile
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
-                <button
-                  type="button"
-                  className="profile-section-cta"
-                  onClick={() => navigate("/circles")}
-                >
-                  View all
-                </button>
               </div>
 
-              {circlesLoading && (
-                <div className="circles-loading">Loading circles...</div>
-              )}
-              {circlesError && <div className="circles-error">{circlesError}</div>}
-              {!circlesLoading && !circlesError && publicCircles.length === 0 && (
-                <div className="circles-empty">
-                  You are not part of any public circles yet.
-                </div>
-              )}
-              {!circlesLoading && !circlesError && publicCircles.length > 0 && (
-                <div className="profile-circles-list">
-                  {publicCircles.map((circle) => {
-                    const id = getCircleId(circle);
-                    if (!id) return null;
-                    return (
-                      <button
-                        type="button"
-                        key={id}
-                        className="profile-circle-button"
-                        onClick={() => navigate(`/circles/${id}`)}
-                      >
-                        {getCircleName(circle)}
-                      </button>
-                    );
-                  })}
-                </div>
+              {isEditingProfile && (
+                <form
+                  onSubmit={handleSaveProfile}
+                  className="space-y-4 rounded-2xl bg-slate-900/80 p-5 shadow-xl ring-1 ring-white/5"
+                >
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <label className="space-y-1 text-xs text-slate-200">
+                      <span className="font-medium">Display name</span>
+                      <input
+                        type="text"
+                        value={editName}
+                        onChange={(e) => setEditName(e.target.value)}
+                        maxLength={60}
+                        required
+                        className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-50 outline-none ring-0 placeholder:text-slate-500 focus:border-rose-400 focus:ring-1 focus:ring-rose-400"
+                      />
+                    </label>
+
+                    <label className="space-y-1 text-xs text-slate-200">
+                      <span className="font-medium">Upload photo</span>
+                      <input
+                        type="file"
+                        accept="image/png,image/jpeg,image/jpg,image/gif,image/webp,image/bmp"
+                        onChange={handleAvatarFileChange}
+                        className="mt-1 block w-full text-[0.7rem] text-slate-300 file:mr-3 file:rounded-md file:border-0 file:bg-slate-800 file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-slate-100 hover:file:bg-slate-700"
+                      />
+                      <small className="block text-[0.68rem] text-slate-400">
+                        Supported formats: PNG, JPG, GIF, WEBP (max 600KB). Leave empty or clear
+                        to keep the default avatar.
+                      </small>
+                    </label>
+
+                    <div className="space-y-2 text-xs text-slate-200">
+                      <span className="font-medium">Preview</span>
+                      <div className="flex items-center gap-3">
+                        <div className="h-16 w-16 rounded-full bg-slate-800/80 ring-1 ring-white/10">
+                          {editAvatarUrl ? (
+                            <img
+                              src={editAvatarUrl}
+                              alt="Avatar preview"
+                              className="h-16 w-16 rounded-full object-cover"
+                            />
+                          ) : avatarUrl ? (
+                            <img
+                              src={avatarUrl}
+                              alt="Avatar preview"
+                              className="h-16 w-16 rounded-full object-cover"
+                            />
+                          ) : (
+                            <div className="flex h-full w-full items-center justify-center text-base font-semibold text-slate-200">
+                              {profileInitial}
+                            </div>
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={clearAvatarSelection}
+                          className="text-[0.7rem] font-medium text-rose-300 hover:text-rose-200"
+                        >
+                          Use default avatar
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2 text-xs text-slate-200 md:col-span-2">
+                      <span className="font-medium">Streaming services</span>
+                      <div className="flex flex-wrap gap-2">
+                        {SERVICE_OPTIONS.map((option) => {
+                          const isActive = editServices.includes(option.key);
+                          return (
+                            <button
+                              type="button"
+                              key={option.key}
+                              onClick={() => toggleServiceSelection(option.key)}
+                              aria-pressed={isActive}
+                              className={
+                                isActive
+                                  ? "inline-flex items-center rounded-full bg-rose-500/90 px-3 py-1 text-[0.7rem] font-semibold text-white shadow-sm ring-1 ring-rose-300/80"
+                                  : "inline-flex items-center rounded-full bg-slate-800/80 px-3 py-1 text-[0.7rem] font-medium text-slate-100 ring-1 ring-white/10 hover:bg-slate-700"
+                              }
+                            >
+                              {option.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <small className="block text-[0.68rem] text-slate-400">
+                        Pick every platform you actively use so we can personalize your feed.
+                      </small>
+                    </div>
+                  </div>
+
+                  {profileSaveError && (
+                    <div className="rounded-md border border-rose-500/50 bg-rose-500/10 px-3 py-2 text-[0.7rem] text-rose-100">
+                      {profileSaveError}
+                    </div>
+                  )}
+
+                  <div className="flex justify-end gap-2 text-xs">
+                    <button
+                      type="button"
+                      onClick={closeEditProfile}
+                      disabled={savingProfile}
+                      className="rounded-full border border-slate-600/80 px-4 py-1.5 font-medium text-slate-200 hover:bg-slate-800 disabled:opacity-60"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={savingProfile}
+                      className="rounded-full bg-rose-500 px-4 py-1.5 font-semibold text-white shadow-sm hover:bg-rose-400 disabled:opacity-60"
+                    >
+                      {savingProfile ? "Saving..." : "Save changes"}
+                    </button>
+                  </div>
+                </form>
               )}
             </section>
 
-            {/* Viewings Section */}
-            <section className="profile-section profile-viewings-section">
-              <div className="profile-section-header">
-                <div>
-                  <h3 className="profile-section-title">Recent viewings</h3>
-                  <p className="profile-section-subtitle">
-                    A snapshot of the latest titles you've logged.
-                  </p>
-                </div>
-                <div className="profile-viewings-controls">
-                  <div className="profile-privacy-toggle">
-                    <button
-                      type="button"
-                      className={
-                        viewingsPublic
-                          ? "privacy-toggle-pill privacy-toggle-pill--active"
-                          : "privacy-toggle-pill"
-                      }
-                      onClick={() => !viewingsPublic && toggleViewingsVisibility()}
-                    >
-                      Public
-                    </button>
-                    <button
-                      type="button"
-                      className={
-                        !viewingsPublic
-                          ? "privacy-toggle-pill privacy-toggle-pill--active"
-                          : "privacy-toggle-pill"
-                      }
-                      onClick={() => viewingsPublic && toggleViewingsVisibility()}
-                    >
-                      Private
-                    </button>
+            {/* Right column: circles and recent viewings */}
+            <div className="w-full space-y-6 lg:w-3/5">
+              {/* Circles section */}
+              <section className="rounded-2xl bg-slate-900/80 p-5 shadow-xl ring-1 ring-white/5">
+                <div className="mb-4 flex items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-sm font-semibold text-slate-50">My circles</h3>
+                    <p className="mt-1 text-xs text-slate-400">
+                      Quick access to the communities you care about most.
+                    </p>
                   </div>
                   <button
                     type="button"
-                    className="profile-section-cta"
-                    onClick={() => navigate("/viewings")}
+                    onClick={() => navigate("/circles")}
+                    className="inline-flex items-center rounded-full bg-slate-800/90 px-3 py-1 text-[0.7rem] font-medium text-slate-100 hover:bg-slate-700"
                   >
                     View all
                   </button>
                 </div>
-              </div>
 
-              {!viewingsPublic ? (
-                <div className="viewings-private-message">
-                  You're keeping your recent viewings private. Toggle back to
-                  Public when you're ready to share.
+                {circlesLoading && (
+                  <div className="py-4 text-xs text-slate-400">Loading circles...</div>
+                )}
+                {circlesError && (
+                  <div className="rounded-md border border-rose-500/50 bg-rose-500/10 px-3 py-2 text-[0.7rem] text-rose-100">
+                    {circlesError}
+                  </div>
+                )}
+                {!circlesLoading && !circlesError && publicCircles.length === 0 && (
+                  <div className="py-4 text-xs text-slate-400">
+                    You are not part of any public circles yet.
+                  </div>
+                )}
+
+                {!circlesLoading && !circlesError && publicCircles.length > 0 && (
+                  <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    {publicCircles.map((circle) => {
+                      const id = getCircleId(circle);
+                      if (!id) return null;
+                      return (
+                        <button
+                          type="button"
+                          key={id}
+                          onClick={() => navigate(`/circles/${id}`)}
+                          className="flex items-center justify-between rounded-xl bg-slate-800/80 px-3 py-2 text-left text-xs text-slate-100 ring-1 ring-white/10 transition hover:bg-slate-700 hover:ring-rose-400/80"
+                        >
+                          <span className="truncate font-medium">
+                            {getCircleName(circle)}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </section>
+
+              {/* Viewings section */}
+              <section className="rounded-2xl bg-slate-900/80 p-5 shadow-xl ring-1 ring-white/5">
+                <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-sm font-semibold text-slate-50">
+                      Recent viewings
+                    </h3>
+                    <p className="mt-1 text-xs text-slate-400">
+                      A snapshot of the latest titles you have logged.
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <div className="inline-flex rounded-full bg-slate-800/90 p-1 text-[0.68rem] font-medium">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!viewingsPublic) toggleViewingsVisibility();
+                        }}
+                        className={
+                          viewingsPublic
+                            ? "rounded-full bg-slate-950 px-3 py-1 text-slate-50 shadow"
+                            : "rounded-full px-3 py-1 text-slate-300 hover:text-slate-50"
+                        }
+                      >
+                        Public
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (viewingsPublic) toggleViewingsVisibility();
+                        }}
+                        className={
+                          !viewingsPublic
+                            ? "rounded-full bg-slate-950 px-3 py-1 text-slate-50 shadow"
+                            : "rounded-full px-3 py-1 text-slate-300 hover:text-slate-50"
+                        }
+                      >
+                        Private
+                      </button>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => navigate("/viewings")}
+                      className="inline-flex items-center rounded-full bg-slate-800/90 px-3 py-1 text-[0.7rem] font-medium text-slate-100 hover:bg-slate-700"
+                    >
+                      View all
+                    </button>
+                  </div>
                 </div>
-              ) : (
-                <>
-                  {viewingsLoading && (
-                    <div className="viewings-loading">Loading viewings...</div>
-                  )}
-                  {viewingsError && (
-                    <div className="viewings-error">{viewingsError}</div>
-                  )}
-                  {!viewingsLoading && !viewingsError && viewings.length === 0 && (
-                    <div className="viewings-empty">No viewings logged yet.</div>
-                  )}
-                  {!viewingsLoading && !viewingsError && viewings.length > 0 && (
-                    <div className="profile-viewings-list">
-                      {viewings.map((viewing) => (
-                        <article key={viewing._id} className="profile-viewing-card">
-                          <div className="profile-viewing-poster">
-                            {viewing.posterUrl ? (
-                              <img
-                                src={viewing.posterUrl}
-                                alt={viewing.displayTitle}
-                              />
-                            ) : (
-                              <div className="profile-viewing-poster--placeholder" />
-                            )}
-                          </div>
-                          <div className="profile-viewing-main">
-                            <div className="profile-viewing-title-row">
-                              <div>
-                                <h4 className="profile-viewing-title">
-                                  {viewing.displayTitle}
-                                </h4>
-                                {viewing.type && (
-                                  <span className="profile-viewing-type">
-                                    {formatViewingTypeLabel(viewing.type)}
+
+                {!viewingsPublic ? (
+                  <div className="rounded-xl bg-slate-900/80 px-4 py-6 text-xs text-slate-300">
+                    You are keeping your recent viewings private. Toggle back to Public when you
+                    are ready to share.
+                  </div>
+                ) : (
+                  <>
+                    {viewingsLoading && (
+                      <div className="py-4 text-xs text-slate-400">Loading viewings...</div>
+                    )}
+                    {viewingsError && (
+                      <div className="rounded-md border border-rose-500/50 bg-rose-500/10 px-3 py-2 text-[0.7rem] text-rose-100">
+                        {viewingsError}
+                      </div>
+                    )}
+                    {!viewingsLoading && !viewingsError && viewings.length === 0 && (
+                      <div className="py-4 text-xs text-slate-400">
+                        No viewings logged yet.
+                      </div>
+                    )}
+
+                    {!viewingsLoading && !viewingsError && viewings.length > 0 && (
+                      <div className="mt-2 space-y-3">
+                        {viewings.map((viewing) => (
+                          <article
+                            key={viewing._id}
+                            className="flex gap-3 rounded-xl bg-slate-900/90 p-3 ring-1 ring-white/5"
+                          >
+                            <div className="h-20 w-14 flex-shrink-0 overflow-hidden rounded-lg bg-slate-800">
+                              {viewing.posterUrl ? (
+                                <img
+                                  src={viewing.posterUrl}
+                                  alt={viewing.displayTitle}
+                                  className="h-full w-full object-cover"
+                                />
+                              ) : (
+                                <div className="flex h-full w-full items-center justify-center text-[0.65rem] text-slate-400">
+                                  No poster
+                                </div>
+                              )}
+                            </div>
+
+                            <div className="flex flex-1 flex-col justify-between">
+                              <div className="flex items-start justify-between gap-3">
+                                <div>
+                                  <h4 className="text-sm font-semibold text-slate-50">
+                                    {viewing.displayTitle}
+                                  </h4>
+                                  {viewing.type && (
+                                    <span className="mt-0.5 inline-flex rounded-full bg-slate-800/80 px-2 py-0.5 text-[0.65rem] font-medium text-slate-200">
+                                      {formatViewingTypeLabel(viewing.type)}
+                                    </span>
+                                  )}
+                                </div>
+                                {viewing.formattedDate && (
+                                  <span className="text-[0.7rem] text-slate-400">
+                                    {viewing.formattedDate}
                                   </span>
                                 )}
                               </div>
-                              {viewing.formattedDate && (
-                                <span className="profile-viewing-date">
-                                  {viewing.formattedDate}
-                                </span>
+
+                              {viewing.comment && (
+                                <p className="mt-2 line-clamp-2 text-[0.75rem] text-slate-200">
+                                  {viewing.comment}
+                                </p>
                               )}
+
+                              <div className="mt-2 flex items-center justify-between">
+                                {viewing.safeRating > 0 && (
+                                  <div className="flex items-center gap-1 text-xs text-amber-300">
+                                    {Array.from({ length: 5 }).map((_, index) => (
+                                      <span
+                                        key={index}
+                                        className={
+                                          index < viewing.safeRating ? "" : "text-slate-600"
+                                        }
+                                      >
+                                        ★
+                                      </span>
+                                    ))}
+                                  </div>
+                                )}
+
+                                <button
+                                  type="button"
+                                  onClick={() => navigate("/viewings")}
+                                  className="text-[0.7rem] font-medium text-rose-300 hover:text-rose-200"
+                                >
+                                  View details
+                                </button>
+                              </div>
                             </div>
-                            {viewing.comment && (
-                              <p className="profile-viewing-comment">
-                                {viewing.comment}
-                              </p>
-                            )}
-                            <div className="profile-viewing-meta">
-                              {viewing.safeRating > 0 && (
-                                <div className="profile-viewing-stars">
-                                  {Array.from({ length: 5 }).map((_, index) => (
-                                    <span
-                                      key={index}
-                                      className={
-                                        index < viewing.safeRating
-                                          ? "profile-viewing-star profile-viewing-star--filled"
-                                          : "profile-viewing-star"
-                                      }
-                                    >
-                                      ★
-                                    </span>
-                                  ))}
-                                </div>
-                              )}
-                              <button
-                                type="button"
-                                className="profile-viewing-link"
-                                onClick={() => navigate("/viewings")}
-                              >
-                                View details
-                              </button>
-                            </div>
-                          </div>
-                        </article>
-                      ))}
-                    </div>
-                  )}
-                </>
-              )}
-            </section>
+                          </article>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                )}
+              </section>
+            </div>
           </div>
         </main>
       </div>
