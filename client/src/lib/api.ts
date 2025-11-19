@@ -10,24 +10,38 @@ const API_BASE =
 
 type Json = Record<string, any> | null;
 
-// Helper: read the JWT from the "token" cookie (if present)
-function getTokenFromCookie(): string | null {
-  if (typeof document === "undefined") return null;
-  const match = document.cookie
-    .split(";")
-    .map((c) => c.trim())
-    .find((c) => c.startsWith("token="));
+// New helper: read token from localStorage first, then fallback to the "token" cookie
+function getToken(): string | null {
+  // 1) Try localStorage (works even if cookies are blocked as third-party)
+  if (typeof window !== "undefined") {
+    try {
+      const stored = window.localStorage.getItem("bfflix_token");
+      if (stored) return stored;
+    } catch (e) {
+      console.warn("Unable to read token from localStorage:", e);
+    }
+  }
 
-  if (!match) return null;
-  // cookie is "token=VALUE"
-  return decodeURIComponent(match.slice("token=".length));
+  // 2) Fallback: try to read from the "token" cookie if present
+  if (typeof document !== "undefined") {
+    const match = document.cookie
+      .split(";")
+      .map((c) => c.trim())
+      .find((c) => c.startsWith("token="));
+
+    if (match) {
+      return decodeURIComponent(match.slice("token=".length));
+    }
+  }
+
+  return null;
 }
 
 async function request<T = Json>(
   path: string,
   options: RequestInit = {}
 ): Promise<T> {
-  const token = getTokenFromCookie();
+  const token = getToken();
 
   // Build headers as a plain object so we can mutate them safely
   const headers: Record<string, string> = {
@@ -43,7 +57,7 @@ async function request<T = Json>(
   const res = await fetch(`${API_BASE}${path}`, {
     method: options.method || "GET",
     headers,
-    // IMPORTANT: send cookies to the backend (for other middleware, etc.)
+    // Still send cookies too, for middleware that might rely on them
     credentials: "include",
     ...options,
   });

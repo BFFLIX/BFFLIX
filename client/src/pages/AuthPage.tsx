@@ -117,12 +117,19 @@ export default function AuthPage() {
 
       const data = await res.json();
       // Backend returns { token, user: { id, email, name } }
-      // You can store this token in a global auth store later:
-      // localStorage.setItem("bfflix_token", data.token);
+      if (data?.token) {
+        try {
+          window.localStorage.setItem("bfflix_token", data.token);
+        } catch (e) {
+          console.warn("Could not persist token to localStorage", e);
+        }
+      }
+
       console.log("Login success:", data);
 
       // Redirect to home/dashboard
       navigate("/home");
+
     } catch (err: any) {
       console.error(err);
       setErrorMsg(err.message || "Login failed. Please try again.");
