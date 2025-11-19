@@ -1109,7 +1109,7 @@ const HomePage: React.FC = () => {
                           />
                         ) : (
                           <span>
-                            {post.authorName.charAt(0).toUpperCase()}
+                            {post.authorName?.charAt(0).toUpperCase() || 'Unknown'}
                           </span>
                         )}
                       </div>

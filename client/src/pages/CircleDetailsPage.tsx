@@ -162,6 +162,28 @@ const CircleDetailsPage: React.FC = () => {
           {!loading && circle && (
             <>
               <header className="circles-header">
+                {!loading && circle && (
+                  <>
+                    <button 
+                      type="button"
+                      className="circle-back-button"
+                      onClick={() => navigate("/circles")}
+                    >
+                      ←Back
+                    </button>
+                    <header className="circles-header">
+                      <div className="circles-header-main">
+                        <div className="circles-title-row">
+                          <span className="circles-icon">👥</span>
+                          <h2 className="circles-title">{circle.name}</h2>
+                        </div>
+                        {circle.description && (
+                          <p className="circles-subtitle">{circle.description}</p>
+                        )}
+                      </div>
+                    </header>
+                  </>
+                )}
                 <div className="circles-header-main">
                   <div className="circles-title-row">
                     <span className="circles-icon">👥</span>
@@ -214,7 +236,7 @@ const CircleDetailsPage: React.FC = () => {
                         <div className="feed-card-author">
                           <div className="feed-card-avatar">
                             <span>
-                              {post.authorName.charAt(0).toUpperCase()}
+                              {post.authorName?.charAt(0).toUpperCase() || 'Unknown'}
                             </span>
                           </div>
                           <div className="feed-card-author-meta">
@@ -222,7 +244,7 @@ const CircleDetailsPage: React.FC = () => {
                               {post.authorName}
                             </div>
                             <div className="feed-card-subtitle">
-                              Posted in: {post.circleNames.join(", ")}
+                              {post.circleNames?.join(", ") || "No circles"}
                             </div>
                           </div>
                         </div>

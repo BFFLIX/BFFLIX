@@ -496,12 +496,19 @@ const CirclesPage: React.FC = () => {
               ) : (
                 circlesForTab.map((circle) => {
                   const id = getCircleId(circle);
+                  console.log(id);
                   const name = getName(circle);
+                  console.log(name);
                   const description = getDescription(circle);
+                  console.log(description)
                   const visibility = getVisibility(circle);
+                  console.log(visibility);
                   const members = computeMembersCount(circle);
+                  console.log(members);
                   const posts = computePostsCount(circle);
+                  console.log(posts);
                   const member = isMember(circle);
+                  console.log(member);
 
                   const isBusyJoining = joiningCircleId === id;
                   const isBusyLeaving = leavingCircleId === id;
