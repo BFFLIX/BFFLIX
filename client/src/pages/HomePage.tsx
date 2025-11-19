@@ -857,16 +857,17 @@ const HomePage: React.FC = () => {
                   </button>
                 ))}
               </div>
-              <div>
+              <div className="flex items-center gap-2 text-xs text-slate-400">
+                <span>Sort by</span>
                 <select
-                  className="border rounded px-2 py-1 text-sm"
+                  className="rounded-full border border-white/10 bg-slate-900/80 px-3 py-1.5 text-xs text-slate-100 shadow-inner shadow-black/60 focus:outline-none focus:ring-2 focus:ring-pink-500/70"
                   value={sortOrder}
                   onChange={(e) =>
                     setSortOrder(e.target.value as "latest" | "smart")
                   }
                 >
                   <option value="latest">Newest</option>
-                  <option value="smart">Top picks</option>
+                  <option value="smart">Top Picks</option>
                 </select>
               </div>
             </div>
