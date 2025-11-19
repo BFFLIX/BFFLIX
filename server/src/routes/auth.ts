@@ -16,6 +16,16 @@ function normEmail(e: string) {
   return e.trim().toLowerCase();
 }
 
+const isProd = process.env.NODE_ENV === "production";
+
+const tokenCookieOptions: CookieOptions = {
+  httpOnly: true,
+  secure: isProd,
+  sameSite: (isProd ? "none" : "lax") as "none" | "lax" | "strict",
+  path: "/",
+  maxAge: 7 * 24 * 60 * 60 * 1000,
+};
+
 // ---------- Schemas ----------
 const signupSchema = z.object({
   email: z.string().email().transform(normEmail),
@@ -83,19 +93,8 @@ r.post("/signup", async (req, res) => {
       console.error("Welcome email failed:", e)
     );
 
-    const cookieOptions: CookieOptions = {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: (process.env.NODE_ENV === "production" ? "none" : "lax") as
-        | "none"
-        | "lax"
-        | "strict",
-      path: "/",
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-    };
-
     return res
-      .cookie("token", token, cookieOptions)
+      .cookie("token", token, tokenCookieOptions)
       .status(201)
       .json({ token, user: { id: user._id, email: user.email, name: user.name } });
   } catch (err: any) {
@@ -165,19 +164,8 @@ r.post("/login", async (req, res) => {
 
     const token = signToken(String(user._id), (user as any).tokenVersion ?? 0);
 
-    const cookieOptions: CookieOptions = {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: (process.env.NODE_ENV === "production" ? "none" : "lax") as
-        | "none"
-        | "lax"
-        | "strict",
-      path: "/",
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-    };
-
     return res
-      .cookie("token", token, cookieOptions)
+      .cookie("token", token, tokenCookieOptions)
       .json({
         token,
         user: { id: user._id, email: user.email, name: user.name },
