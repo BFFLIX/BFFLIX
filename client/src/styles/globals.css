@@ -1,0 +1,13 @@
+/* client/src/styles/globals.css */
+
+/* This single import pulls in Tailwind’s base, components, and utilities in v4 */
+@import "tailwindcss";
+
+/* Global app base styles */
+@layer base {
+  body {
+    @apply bg-[#0b0f19] text-white antialiased;
+  }
+}
+
+/* You can later add reusable component classes here with @layer components */

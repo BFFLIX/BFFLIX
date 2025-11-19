@@ -1,4 +1,3 @@
-
 // client/src/lib/TMDBService.ts
 const TMDB_API_KEY = import.meta.env.VITE_TMDB_API_KEY;
 const TMDB_API_BASE = "https://api.themoviedb.org/3";
@@ -15,6 +14,7 @@ export type TmdbTitleOption = {
   label: string;
   posterUrl?: string;
   type: "movie" | "tv";
+  year?: number;
 };
 
 /**
@@ -41,9 +41,19 @@ export async function searchTmdbTitles(
 
   return results.map((r: any) => {
     const title =
-      type === "movie" ? r.title || r.name || "Untitled" : r.name || r.title || "Untitled";
+      type === "movie"
+        ? r.title || r.name || "Untitled"
+        : r.name || r.title || "Untitled";
+
     const posterUrl = r.poster_path
       ? `${TMDB_IMAGE_BASE}${r.poster_path}`
+      : undefined;
+
+    const rawDate: string | undefined =
+      type === "movie" ? r.release_date : r.first_air_date;
+
+    const year = rawDate && typeof rawDate === "string" && rawDate.length >= 4
+      ? Number.parseInt(rawDate.slice(0, 4), 10)
       : undefined;
 
     return {
@@ -51,6 +61,7 @@ export async function searchTmdbTitles(
       label: title,
       posterUrl,
       type,
+      year,
     } as TmdbTitleOption;
   });
 }
@@ -61,7 +72,7 @@ export async function searchTmdbTitles(
 export async function fetchTmdbTitleDetails(
   tmdbId: string,
   type: "movie" | "tv"
-): Promise<{ title: string; posterUrl?: string }> {
+): Promise<{ title: string; posterUrl?: string; year?: number }> {
   if (!TMDB_API_KEY) {
     return {
       title: "Unknown title (no TMDB key)",
@@ -88,5 +99,12 @@ export async function fetchTmdbTitleDetails(
     ? `${TMDB_IMAGE_BASE}${data.poster_path}`
     : undefined;
 
-  return { title, posterUrl };
+  const rawDate: string | undefined =
+    type === "movie" ? data.release_date : data.first_air_date;
+
+  const year = rawDate && typeof rawDate === "string" && rawDate.length >= 4
+    ? Number.parseInt(rawDate.slice(0, 4), 10)
+    : undefined;
+
+  return { title, posterUrl, year };
 }

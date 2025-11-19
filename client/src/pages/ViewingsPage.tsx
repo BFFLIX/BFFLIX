@@ -1,15 +1,15 @@
 
 // src/pages/ViewingsPage.tsx
-import React, { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import bfflixLogo from "../assets/bfflix-logo.svg";
+import type { FC } from "react";
+import { useEffect, useState } from "react";
+import LeftSidebar from "../components/LeftSidebar";
+import TopBar from "../components/TopBar";
 import { apiGet, apiPost, apiDelete } from "../lib/api";
 import {
   searchTmdbTitles,
   fetchTmdbTitleDetails,
 } from "../lib/TMDBService";
 import type { TmdbTitleOption } from "../lib/TMDBService";
-import "../styles/ViewingsPage.css";
 
 type Viewing = {
   _id: string;
@@ -46,7 +46,7 @@ function formatType(type?: string) {
   if (!type) return "";
   const lower = type.toLowerCase();
   if (lower === "movie") return "Movie";
-  if (lower === "show" || lower === "tv") return "Show";
+  if (lower === "show" || lower === "tv") return "TV Show";
   return type;
 }
 
@@ -61,9 +61,7 @@ function normalizeCircleNames(circles?: Viewing["circles"]): string[] {
   return [];
 }
 
-const ViewingsPage: React.FC = () => {
-  const navigate = useNavigate();
-
+const ViewingsPage: FC = () => {
   const [viewings, setViewings] = useState<Viewing[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -193,6 +191,18 @@ const ViewingsPage: React.FC = () => {
       const bTime = b.watchedAt ? new Date(b.watchedAt).getTime() : 0;
       return sortOrder === "newest" ? bTime - aTime : aTime - bTime;
     });
+
+  // Stats for header cards
+  const totalViewings = viewings.length;
+  const movieCount = viewings.filter(
+    (v) => v.type && v.type.toString().toLowerCase() === "movie"
+  ).length;
+  const showCount = viewings.filter((v) => {
+    const t = v.type?.toString().toLowerCase();
+    return t === "tv" || t === "show";
+  }).length;
+  const noteCount = viewings.filter((v) => v.comment && v.comment.trim())
+    .length;
 
   // ----------------- Viewing details -----------------
 
@@ -352,153 +362,145 @@ const ViewingsPage: React.FC = () => {
     }
   };
 
-  // ----------------- Layout helpers -----------------
-
-  const handleLogout = () => {
-    localStorage.removeItem("token");
-    sessionStorage.removeItem("token");
-    localStorage.removeItem("authToken");
-    sessionStorage.removeItem("authToken");
-    navigate("/login");
-  };
-
   return (
-    <div className="app-shell">
-      <div className="app-main-layout">
-        {/* LEFT SIDEBAR */}
-        <aside className="app-sidebar">
-          <div className="app-sidebar-brand">
-            <img
-              src={bfflixLogo}
-              alt="BFFLIX"
-              className="app-sidebar-logo-img"
-            />
-          </div>
+    <div className="min-h-screen flex flex-col bg-[radial-gradient(circle_at_top,_#1f1632_0,_#050311_55%,_#020008_100%)] text-slate-50">
+      <TopBar showName={true} />
 
-          <nav className="app-sidebar-nav">
-            <button
-              className="app-nav-item"
-              type="button"
-              onClick={() => navigate("/home")}
-            >
-              <span className="app-nav-icon">🏠</span>
-              <span>Home</span>
-            </button>
+      <div className="flex flex-1">
+        <LeftSidebar />
 
-            <button
-              className="app-nav-item"
-              type="button"
-              onClick={() => navigate("/circles")}
-            >
-              <span className="app-nav-icon">👥</span>
-              <span>Circles</span>
-            </button>
-
-            <button
-              className="app-nav-item app-nav-item--active"
-              type="button"
-              onClick={() => navigate("/viewings")}
-            >
-              <span className="app-nav-icon">🎬</span>
-              <span>Viewings</span>
-            </button>
-
-            <button
-              className="app-nav-item"
-              type="button"
-              onClick={() => navigate("/ai")}
-            >
-              <span className="app-nav-icon">✨</span>
-              <span>AI Assistant</span>
-            </button>
-
-            <button
-              className="app-nav-item"
-              type="button"
-              onClick={() => navigate("/profile")}
-            >
-              <span className="app-nav-icon">👤</span>
-              <span>Profile</span>
-            </button>
-          </nav>
-
-          <button
-            className="app-logout-button"
-            type="button"
-            onClick={handleLogout}
-          >
-            Log out
-          </button>
-        </aside>
-
-        {/* CENTER COLUMN */}
-        <main className="app-feed">
-          <header className="feed-header">
-            <h1 className="feed-title">Viewings</h1>
-          </header>
-
-          <div className="viewings-page">
-            <div className="viewings-header">
-              <div className="viewings-header-main">
-                <div className="viewings-title-row">
-                  <span className="viewings-icon">🎬</span>
-                  <h2 className="viewings-title">Past viewings</h2>
+        <main className="flex-1 overflow-y-auto px-4 pb-10 pt-6 md:px-8 mt-2">
+          <section className="mx-auto flex max-w-6xl flex-col gap-6">
+            {/* Header + Add button */}
+            <div className="flex flex-col items-center justify-center gap-2 text-center">
+              <div>
+                <div className="flex items-center gap-3">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-full bg-pink-500/20 text-xl">
+                    <span role="img" aria-label="viewings">
+                      🎬
+                    </span>
+                  </div>
+                  <h1 className="text-2xl font-semibold tracking-tight">
+                    My Viewings
+                  </h1>
                 </div>
-                <p className="viewings-subtitle">
-                  Revisit everything you have logged through BFFlix.
+                <p className="mt-1 text-sm text-slate-400 text-center">
+                  Track what you have watched and revisit your own notes instead
+                  of generic summaries.
                 </p>
               </div>
 
-              <button
-                type="button"
-                className="viewings-add-button"
-                onClick={openCreateModal}
-              >
-                <span className="viewings-add-plus">+</span>
-                Add viewing
-              </button>
+              <div className="w-full flex justify-end mt-1">
+                <button
+                  type="button"
+                  onClick={openCreateModal}
+                  className="inline-flex items-center justify-center rounded-full bg-pink-500 px-5 py-2 text-sm font-medium text-white shadow-[0_10px_35px_rgba(236,72,153,0.45)] transition hover:bg-pink-400 hover:shadow-[0_12px_40px_rgba(236,72,153,0.6)]"
+                >
+                  <span className="mr-2 text-lg leading-none">＋</span>
+                  Add viewing
+                </button>
+              </div>
             </div>
 
-            <div className="viewings-controls">
-              <div className="viewings-tabs">
-                <button
-                  type="button"
-                  className={
-                    typeFilter === "all"
-                      ? "viewings-tab viewings-tab--active"
-                      : "viewings-tab"
-                  }
-                  onClick={() => setTypeFilter("all")}
-                >
-                  All
-                </button>
-                <button
-                  type="button"
-                  className={
-                    typeFilter === "movie"
-                      ? "viewings-tab viewings-tab--active"
-                      : "viewings-tab"
-                  }
-                  onClick={() => setTypeFilter("movie")}
-                >
+            {/* Stat cards */}
+            <div className="grid gap-4 md:grid-cols-4">
+              <div className="rounded-2xl bg-slate-900/70 p-4 shadow-lg shadow-black/40 ring-1 ring-white/5">
+                <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-slate-400">
+                  <span role="img" aria-hidden="true">
+                    👀
+                  </span>
+                  Watched
+                </div>
+                <div className="mt-3 text-2xl font-semibold">
+                  {totalViewings}
+                </div>
+                <p className="mt-1 text-xs text-slate-500">
+                  Total movies and shows you have logged.
+                </p>
+              </div>
+
+              <div className="rounded-2xl bg-slate-900/70 p-4 shadow-lg shadow-black/40 ring-1 ring-white/5">
+                <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-slate-400">
+                  <span role="img" aria-hidden="true">
+                    🎬
+                  </span>
                   Movies
+                </div>
+                <div className="mt-3 text-2xl font-semibold">{movieCount}</div>
+                <p className="mt-1 text-xs text-slate-500">
+                  Feature films you have tracked.
+                </p>
+              </div>
+
+              <div className="rounded-2xl bg-slate-900/70 p-4 shadow-lg shadow-black/40 ring-1 ring-white/5">
+                <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-slate-400">
+                  <span role="img" aria-hidden="true">
+                    📺
+                  </span>
+                  TV shows
+                </div>
+                <div className="mt-3 text-2xl font-semibold">{showCount}</div>
+                <p className="mt-1 text-xs text-slate-500">
+                  Series or episodes you have logged.
+                </p>
+              </div>
+
+              <div className="rounded-2xl bg-slate-900/70 p-4 shadow-lg shadow-black/40 ring-1 ring-white/5">
+                <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-slate-400">
+                  <span role="img" aria-hidden="true">
+                    ✍️
+                  </span>
+                  Notes
+                </div>
+                <div className="mt-3 text-2xl font-semibold">{noteCount}</div>
+                <p className="mt-1 text-xs text-slate-500">
+                  Viewings where you left your own thoughts.
+                </p>
+              </div>
+            </div>
+
+            {/* Filters row */}
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div className="inline-flex rounded-full bg-slate-900/70 p-1 ring-1 ring-white/5">
+                <button
+                  type="button"
+                  onClick={() => setTypeFilter("all")}
+                  className={`rounded-full px-4 py-1.5 text-xs font-medium transition ${
+                    typeFilter === "all"
+                      ? "bg-pink-500 text-white shadow-[0_8px_25px_rgba(236,72,153,0.5)]"
+                      : "text-slate-300 hover:text-white"
+                  }`}
+                >
+                  All ({totalViewings})
                 </button>
                 <button
                   type="button"
-                  className={
-                    typeFilter === "show"
-                      ? "viewings-tab viewings-tab--active"
-                      : "viewings-tab"
-                  }
-                  onClick={() => setTypeFilter("show")}
+                  onClick={() => setTypeFilter("movie")}
+                  className={`rounded-full px-4 py-1.5 text-xs font-medium transition ${
+                    typeFilter === "movie"
+                      ? "bg-pink-500 text-white shadow-[0_8px_25px_rgba(236,72,153,0.5)]"
+                      : "text-slate-300 hover:text-white"
+                  }`}
                 >
-                  Shows
+                  Movies ({movieCount})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTypeFilter("show")}
+                  className={`rounded-full px-4 py-1.5 text-xs font-medium transition ${
+                    typeFilter === "show"
+                      ? "bg-pink-500 text-white shadow-[0_8px_25px_rgba(236,72,153,0.5)]"
+                      : "text-slate-300 hover:text-white"
+                  }`}
+                >
+                  Shows ({showCount})
                 </button>
               </div>
 
-              <div className="viewings-filters-right">
+              <div className="flex items-center gap-2 text-xs text-slate-400">
+                <span>Sort by</span>
                 <select
-                  className="viewings-select"
+                  className="rounded-full border border-white/10 bg-slate-900/80 px-3 py-1.5 text-xs text-slate-100 shadow-inner shadow-black/60 focus:outline-none focus:ring-2 focus:ring-pink-500/70"
                   value={sortOrder}
                   onChange={(e) =>
                     setSortOrder(e.target.value as "newest" | "oldest")
@@ -510,27 +512,35 @@ const ViewingsPage: React.FC = () => {
               </div>
             </div>
 
+            {/* Status messages */}
             {isLoading && (
-              <div className="viewings-loading">Loading your viewings…</div>
+              <div className="rounded-2xl bg-slate-900/70 p-6 text-sm text-slate-300">
+                Loading your viewings…
+              </div>
             )}
 
             {error && !isLoading && (
-              <div className="viewings-error">{error}</div>
+              <div className="rounded-2xl bg-red-900/40 p-6 text-sm text-red-100">
+                {error}
+              </div>
             )}
 
             {deleteError && (
-              <div className="viewings-error">{deleteError}</div>
+              <div className="rounded-2xl bg-red-900/40 p-4 text-xs text-red-100">
+                {deleteError}
+              </div>
             )}
 
             {!isLoading && !error && filtered.length === 0 && (
-              <div className="viewings-empty">
+              <div className="rounded-2xl bg-slate-900/70 p-6 text-sm text-slate-300">
                 You have not logged any viewings yet. Create a viewing to start
                 tracking what you watch.
               </div>
             )}
 
+            {/* Cards grid */}
             {!isLoading && !error && filtered.length > 0 && (
-              <div className="viewings-list">
+              <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-4">
                 {filtered.map((v) => {
                   const circles = normalizeCircleNames(v.circles);
                   const safeRating =
@@ -542,95 +552,107 @@ const ViewingsPage: React.FC = () => {
                     v.title ||
                     (v.tmdbId ? `TMDB #${v.tmdbId}` : "Untitled viewing");
 
+                  const truncatedComment =
+                    v.comment && v.comment.length > 160
+                      ? `${v.comment.slice(0, 160)}…`
+                      : v.comment || "No notes for this viewing yet.";
+
                   return (
                     <article
                       key={v._id}
-                      className="viewing-card"
-                      onClick={() => openDetails(v)}
+                      className="flex flex-col overflow-hidden rounded-3xl bg-slate-950/80 shadow-xl shadow-black/60 ring-1 ring-white/5 transition hover:-translate-y-1 hover:ring-pink-500/60"
                     >
-                      <div className="viewing-poster">
+                      {/* Poster */}
+                      <div
+                        className="relative cursor-pointer"
+                        onClick={() => openDetails(v)}
+                      >
                         {v.posterUrl ? (
-                          <img src={v.posterUrl} alt={displayTitle} />
+                          <img
+                            src={v.posterUrl}
+                            alt={displayTitle}
+                            className="h-60 w-full object-cover"
+                          />
                         ) : (
-                          <div />
+                          <div className="flex h-60 w-full items-center justify-center bg-slate-900 text-sm text-slate-500">
+                            No poster
+                          </div>
                         )}
+
+                        <div className="pointer-events-none absolute left-3 top-3 rounded-full bg-slate-900/80 px-3 py-1 text-xs font-medium text-slate-100 ring-1 ring-white/15">
+                          {formatType(v.type) || "Viewing"}
+                        </div>
                       </div>
 
-                      <div className="viewing-main">
-                        <div className="viewing-title-row">
-                          <div>
-                            <h3 className="viewing-title">{displayTitle}</h3>
-                            {v.type && (
-                              <span className="viewing-meta-type">
-                                {formatType(v.type)}
-                              </span>
-                            )}
-                          </div>
-                          <span className="viewing-status-pill">Watched</span>
-                        </div>
-
-                        <div className="viewing-meta-row">
-                          <span className="viewing-meta-item">
-                            <span className="viewing-meta-label">Date:</span>
+                      {/* Content */}
+                      <div className="flex flex-1 flex-col p-4">
+                        <div className="mb-2 flex items-start justify-between gap-3">
+                          <h3 className="text-sm font-semibold leading-snug text-slate-50">
+                            {displayTitle}
+                          </h3>
+                          <span className="whitespace-nowrap text-xs text-slate-400">
                             {formatDate(v.watchedAt)}
                           </span>
-
-                          {circles.length > 0 && (
-                            <span className="viewing-meta-item">
-                              <span className="viewing-meta-label">
-                                Circles:
-                              </span>
-                              {circles.join(", ")}
-                            </span>
-                          )}
                         </div>
 
-                        {/* comment under title/stars */}
-                        {v.comment && (
-                          <p className="viewing-comment">{v.comment}</p>
+                        {circles.length > 0 && (
+                          <div className="mb-2 flex flex-wrap gap-1">
+                            {circles.map((c) => (
+                              <span
+                                key={c}
+                                className="rounded-full bg-slate-900/80 px-2 py-0.5 text-[10px] font-medium text-slate-300 ring-1 ring-white/10"
+                              >
+                                {c}
+                              </span>
+                            ))}
+                          </div>
                         )}
 
-                        <div className="viewing-bottom-row">
-                          <div className="viewing-stars">
+                        {/* Rating + label */}
+                        <div className="mb-2 flex items-center justify-between">
+                          <span className="text-[11px] font-medium text-slate-400">
+                            Your rating
+                          </span>
+                          <div className="flex items-center gap-0.5 text-base">
                             {Array.from({ length: 5 }).map((_, i) => (
                               <span
                                 key={i}
                                 className={
                                   i < safeRating
-                                    ? "viewing-star viewing-star--filled"
-                                    : "viewing-star"
+                                    ? "text-yellow-400"
+                                    : "text-slate-600"
                                 }
                               >
                                 ★
                               </span>
                             ))}
                           </div>
+                        </div>
 
-                          <div className="viewing-actions">
-                            <button
-                              type="button"
-                              className="viewing-action-button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                openDetails(v);
-                              }}
-                            >
-                              View details
-                            </button>
-                            <button
-                              type="button"
-                              className="viewing-action-button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleDeleteViewing(v._id);
-                              }}
-                              disabled={isDeletingId === v._id}
-                            >
-                              {isDeletingId === v._id
-                                ? "Deleting..."
-                                : "Delete"}
-                            </button>
-                          </div>
+                        {/* User's own note instead of generic summary */}
+                        <p className="mb-4 line-clamp-4 text-xs leading-relaxed text-slate-300">
+                          {truncatedComment}
+                        </p>
+
+                        <div className="mt-auto flex items-center justify-between pt-2">
+                          <button
+                            type="button"
+                            onClick={() => openDetails(v)}
+                            className="text-xs font-medium text-pink-400 hover:text-pink-300"
+                          >
+                            View details
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteViewing(v._id);
+                            }}
+                            disabled={isDeletingId === v._id}
+                            className="text-xs font-medium text-red-400 hover:text-red-300 disabled:cursor-wait disabled:text-red-300/60"
+                          >
+                            {isDeletingId === v._id ? "Deleting…" : "Delete"}
+                          </button>
                         </div>
                       </div>
                     </article>
@@ -638,55 +660,67 @@ const ViewingsPage: React.FC = () => {
                 })}
               </div>
             )}
-          </div>
+          </section>
         </main>
+      </div>
 
-        {/* Details drawer */}
-        {isDetailsOpen && selectedViewing && (
-          <aside className="viewing-details-drawer">
-            <button
-              type="button"
-              className="viewing-details-close"
-              onClick={closeDetails}
-            >
-              ×
-            </button>
+      {/* DETAILS DRAWER */}
+      {isDetailsOpen && selectedViewing && (
+        <div className="fixed inset-0 z-40 flex items-stretch justify-end bg-black/60">
+          <div className="flex h-full w-full max-w-md flex-col overflow-y-auto border-l border-pink-500/40 bg-slate-950/95 p-6 shadow-2xl shadow-black/80">
+            <div className="mb-4 flex items-start justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-semibold text-slate-50">
+                  {selectedViewing.title ||
+                    selectedViewing.comment ||
+                    (selectedViewing.tmdbId
+                      ? `TMDB #${selectedViewing.tmdbId}`
+                      : "Viewing details")}
+                </h2>
+                {selectedViewing.type && (
+                  <div className="mt-1 inline-flex rounded-full bg-slate-900/90 px-3 py-0.5 text-[11px] font-medium text-slate-200 ring-1 ring-white/15">
+                    {formatType(selectedViewing.type)}
+                  </div>
+                )}
+              </div>
+
+              <button
+                type="button"
+                onClick={closeDetails}
+                className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-slate-900/80 text-lg text-slate-300 hover:bg-slate-800"
+              >
+                ×
+              </button>
+            </div>
 
             {isDetailsLoading ? (
-              <div className="viewing-details-loading">Loading details…</div>
+              <div className="text-sm text-slate-300">Loading details…</div>
             ) : detailsError ? (
-              <div className="viewing-details-error">{detailsError}</div>
+              <div className="rounded-xl bg-red-900/40 p-4 text-sm text-red-100">
+                {detailsError}
+              </div>
             ) : (
               <>
-                <div className="viewing-details-header">
-                  <h2>
-                    {selectedViewing.title ||
-                      selectedViewing.comment ||
-                      (selectedViewing.tmdbId
-                        ? `TMDB #${selectedViewing.tmdbId}`
-                        : "Untitled viewing")}
-                  </h2>
-                  {selectedViewing.type && (
-                    <span className="viewing-meta-type">
-                      {formatType(selectedViewing.type)}
-                    </span>
-                  )}
-                </div>
+                <div className="mb-4 space-y-2 text-sm text-slate-300">
+                  <div>
+                    <span className="text-xs font-medium text-slate-400">
+                      Watched:
+                    </span>{" "}
+                    {formatDate(selectedViewing.watchedAt)}
+                  </div>
 
-                <div className="viewing-details-body">
-                  <div className="viewing-details-meta">
-                    <div>
-                      <span className="viewing-meta-label">Watched:</span>{" "}
-                      {formatDate(selectedViewing.watchedAt)}
-                    </div>
-                    <div className="viewing-stars viewing-stars--details">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-medium text-slate-400">
+                      Rating:
+                    </span>
+                    <div className="flex items-center gap-0.5 text-base">
                       {Array.from({ length: 5 }).map((_, i) => (
                         <span
                           key={i}
                           className={
                             i < (selectedViewing.rating || 0)
-                              ? "viewing-star viewing-star--filled"
-                              : "viewing-star"
+                              ? "text-yellow-400"
+                              : "text-slate-600"
                           }
                         >
                           ★
@@ -694,221 +728,232 @@ const ViewingsPage: React.FC = () => {
                       ))}
                     </div>
                   </div>
-
-                  {(selectedViewing.body || selectedViewing.comment) && (
-                    <div className="viewing-details-note">
-                      <div className="viewing-meta-label">Your notes</div>
-                      <p>{selectedViewing.body || selectedViewing.comment}</p>
-                    </div>
-                  )}
                 </div>
+
+                {(selectedViewing.body || selectedViewing.comment) && (
+                  <div className="mt-2 rounded-2xl bg-slate-900/80 p-4 ring-1 ring-white/10">
+                    <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">
+                      Your notes
+                    </div>
+                    <p className="text-sm leading-relaxed text-slate-200">
+                      {selectedViewing.body || selectedViewing.comment}
+                    </p>
+                  </div>
+                )}
               </>
             )}
-          </aside>
-        )}
+          </div>
+        </div>
+      )}
 
-        {/* CREATE VIEWING MODAL */}
-        {isCreateOpen && (
-          <div className="create-viewing-backdrop">
-            <div className="create-viewing-card">
-              <header className="create-viewing-header">
-                <div className="create-viewing-type-toggle">
-                  <button
-                    type="button"
-                    className={
-                      createType === "movie"
-                        ? "create-viewing-type-button create-viewing-type-button--active"
-                        : "create-viewing-type-button"
-                    }
-                    onClick={() => setCreateType("movie")}
-                  >
-                    Movie
-                  </button>
-                  <button
-                    type="button"
-                    className={
-                      createType === "tv"
-                        ? "create-viewing-type-button create-viewing-type-button--active"
-                        : "create-viewing-type-button"
-                    }
-                    onClick={() => setCreateType("tv")}
-                  >
-                    Show
-                  </button>
-                </div>
+      {/* CREATE VIEWING MODAL */}
+      {isCreateOpen && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/70 px-4">
+          <div className="w-full max-w-3xl rounded-3xl bg-slate-950/95 p-6 shadow-2xl shadow-black/80 ring-1 ring-pink-500/40">
+            <header className="mb-4 flex items-center justify-between gap-4">
+              <div className="inline-flex rounded-full bg-slate-900/80 p-1 ring-1 ring-white/10">
                 <button
                   type="button"
-                  className="create-viewing-close"
-                  onClick={closeCreateModal}
+                  className={`rounded-full px-4 py-1.5 text-xs font-medium transition ${
+                    createType === "movie"
+                      ? "bg-pink-500 text-white shadow-[0_8px_25px_rgba(236,72,153,0.6)]"
+                      : "text-slate-300 hover:text-white"
+                  }`}
+                  onClick={() => setCreateType("movie")}
                 >
-                  ×
+                  Movie
                 </button>
-              </header>
+                <button
+                  type="button"
+                  className={`rounded-full px-4 py-1.5 text-xs font-medium transition ${
+                    createType === "tv"
+                      ? "bg-pink-500 text-white shadow-[0_8px_25px_rgba(236,72,153,0.6)]"
+                      : "text-slate-300 hover:text-white"
+                  }`}
+                  onClick={() => setCreateType("tv")}
+                >
+                  TV Show
+                </button>
+              </div>
 
-              <div className="create-viewing-body">
-                {/* Search */}
-                <div className="create-viewing-field">
-                  <label className="create-viewing-label">
-                    Search for a {createType === "movie" ? "movie" : "show"}
-                  </label>
-                  <input
-                    type="text"
-                    className="create-viewing-input"
-                    placeholder={
-                      createType === "movie"
-                        ? "Search for a movie..."
-                        : "Search for a show..."
-                    }
-                    value={searchQuery}
-                    onChange={(e) => {
-                      setSearchQuery(e.target.value);
-                      setSelectedTitle(null);
-                    }}
-                  />
-                  {isSearching && (
-                    <div className="create-viewing-search-status">
-                      Searching TMDB...
-                    </div>
-                  )}
-                  {searchResults.length > 0 && (
-                    <ul className="create-viewing-search-results">
-                      {searchResults.map((r) => (
-                        <li key={r.id}>
-                          <button
-                            type="button"
-                            className="create-viewing-search-result"
-                            onClick={() => handleSelectTitle(r)}
-                          >
-                            {r.posterUrl && (
-                              <img
-                                src={r.posterUrl}
-                                alt={r.label}
-                                className="create-viewing-search-poster"
-                              />
-                            )}
-                            <span>{r.label}</span>
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                  {selectedTitle && (
-                    <div className="create-viewing-selected">
-                      Selected: {selectedTitle.label}
-                    </div>
-                  )}
-                </div>
+              <button
+                type="button"
+                onClick={closeCreateModal}
+                className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-slate-900/80 text-lg text-slate-300 hover:bg-slate-800"
+              >
+                ×
+              </button>
+            </header>
 
-                {/* Rating */}
-                <div className="create-viewing-field">
-                  <div className="create-viewing-rating-row">
-                    <span className="create-viewing-label">Rating:</span>
-                    <div className="create-viewing-stars">
-                      {Array.from({ length: 5 }).map((_, i) => (
-                        <button
-                          key={i}
-                          type="button"
-                          className={
-                            i < rating
-                              ? "viewing-star viewing-star--filled"
-                              : "viewing-star"
-                          }
-                          onClick={() => setRating(i + 1)}
-                        >
-                          ★
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
+            <div className="grid gap-6 md:grid-cols-2">
+              {/* Search column */}
+              <div className="space-y-3">
+                <label className="block text-xs font-semibold uppercase tracking-wide text-slate-400">
+                  Search for a {createType === "movie" ? "movie" : "show"}
+                </label>
+                <input
+                  type="text"
+                  className="w-full rounded-2xl border border-white/10 bg-slate-950/80 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 shadow-inner shadow-black/70 focus:outline-none focus:ring-2 focus:ring-pink-500/70"
+                  placeholder={
+                    createType === "movie"
+                      ? "Search for a movie…"
+                      : "Search for a show…"
+                  }
+                  value={searchQuery}
+                  onChange={(e) => {
+                    setSearchQuery(e.target.value);
+                    setSelectedTitle(null);
+                  }}
+                />
 
-                {/* TV extras */}
-                {createType === "tv" && (
-                  <div className="create-viewing-row">
-                    <div className="create-viewing-field create-viewing-field-half">
-                      <label className="create-viewing-label">
-                        Season (optional)
-                      </label>
-                      <input
-                        type="number"
-                        min={1}
-                        className="create-viewing-input"
-                        value={seasonNumber}
-                        onChange={(e) => setSeasonNumber(e.target.value)}
-                      />
-                    </div>
-                    <div className="create-viewing-field create-viewing-field-half">
-                      <label className="create-viewing-label">
-                        Episode (optional)
-                      </label>
-                      <input
-                        type="number"
-                        min={1}
-                        className="create-viewing-input"
-                        value={episodeNumber}
-                        onChange={(e) => setEpisodeNumber(e.target.value)}
-                      />
-                    </div>
+                {isSearching && (
+                  <div className="text-xs text-slate-400">Searching TMDB…</div>
+                )}
+
+                {!isSearching && searchResults.length > 0 && (
+                  <div className="max-h-60 space-y-1 overflow-y-auto rounded-2xl bg-slate-900/90 p-2 text-sm">
+                    {searchResults.map((opt) => (
+                      <button
+                        key={`${opt.type}-${opt.id}`}
+                        type="button"
+                        onClick={() => handleSelectTitle(opt)}
+                        className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-slate-100 hover:bg-slate-800"
+                      >
+                        <div className="flex flex-col">
+                          <span className="text-xs font-medium">{opt.label}</span>
+                        </div>
+                        <span className="rounded-full bg-slate-800 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-300">
+                          {opt.type === "tv" ? "TV" : "Movie"}
+                        </span>
+                      </button>
+                    ))}
                   </div>
                 )}
 
-                {/* Note */}
-                <div className="create-viewing-field">
-                  <label className="create-viewing-label">
-                    Notes (optional)
-                  </label>
-                  <textarea
-                    className="create-viewing-textarea"
-                    maxLength={1000}
-                    placeholder="What did you think?"
-                    value={note}
-                    onChange={(e) => setNote(e.target.value)}
-                  />
-                  <div className="create-viewing-char-counter">
-                    {note.length}/1000
+                {selectedTitle && (
+                  <div className="mt-2 rounded-2xl bg-slate-900/90 p-3 text-xs text-slate-200 ring-1 ring-white/10">
+                    <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                      Selected title
+                    </div>
+                    <div className="font-medium">{selectedTitle.label}</div>
                   </div>
-                </div>
-
-                {/* Watched on */}
-                <div className="create-viewing-field">
-                  <div className="create-viewing-watched-row">
-                    <span className="create-viewing-label">Watched on:</span>
-                    <input
-                      type="date"
-                      className="create-viewing-input"
-                      value={watchedAt}
-                      onChange={(e) => setWatchedAt(e.target.value)}
-                    />
-                  </div>
-                </div>
-
-                {submitError && (
-                  <div className="create-viewing-error">{submitError}</div>
                 )}
               </div>
 
-              <footer className="create-viewing-footer">
-                <button
-                  type="button"
-                  className="create-viewing-cancel"
-                  onClick={closeCreateModal}
-                  disabled={isSubmitting}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  className="create-viewing-submit"
-                  onClick={handleSubmitViewing}
-                  disabled={isSubmitting}
-                >
-                  {isSubmitting ? "Saving..." : "Save viewing"}
-                </button>
-              </footer>
+              {/* Details / notes column */}
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-xs font-semibold uppercase tracking-wide text-slate-400">
+                    Your rating
+                  </label>
+                  <div className="mt-1 flex items-center gap-1">
+                    {Array.from({ length: 5 }).map((_, i) => (
+                      <button
+                        key={i}
+                        type="button"
+                        onClick={() => setRating(i + 1)}
+                        className={
+                          i < rating
+                            ? "text-xl text-yellow-400"
+                            : "text-xl text-slate-600 hover:text-slate-400"
+                        }
+                      >
+                        ★
+                      </button>
+                    ))}
+                    {rating === 0 && (
+                      <span className="ml-2 text-[11px] text-slate-500">
+                        Optional
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold uppercase tracking-wide text-slate-400">
+                    Watched on
+                  </label>
+                  <input
+                    type="date"
+                    value={watchedAt}
+                    onChange={(e) => setWatchedAt(e.target.value)}
+                    className="mt-1 w-full rounded-2xl border border-white/10 bg-slate-950/80 px-3 py-2 text-sm text-slate-100 shadow-inner shadow-black/70 focus:outline-none focus:ring-2 focus:ring-pink-500/70"
+                  />
+                </div>
+
+                {createType === "tv" && (
+                  <div className="flex gap-3">
+                    <div className="flex-1">
+                      <label className="block text-xs font-semibold uppercase tracking-wide text-slate-400">
+                        Season
+                      </label>
+                      <input
+                        type="number"
+                        min={1}
+                        value={seasonNumber}
+                        onChange={(e) => setSeasonNumber(e.target.value)}
+                        className="mt-1 w-full rounded-2xl border border-white/10 bg-slate-950/80 px-3 py-2 text-sm text-slate-100 shadow-inner shadow-black/70 focus:outline-none focus:ring-2 focus:ring-pink-500/70"
+                      />
+                    </div>
+                    <div className="flex-1">
+                      <label className="block text-xs font-semibold uppercase tracking-wide text-slate-400">
+                        Episode
+                      </label>
+                      <input
+                        type="number"
+                        min={1}
+                        value={episodeNumber}
+                        onChange={(e) => setEpisodeNumber(e.target.value)}
+                        className="mt-1 w-full rounded-2xl border border-white/10 bg-slate-950/80 px-3 py-2 text-sm text-slate-100 shadow-inner shadow-black/70 focus:outline-none focus:ring-2 focus:ring-pink-500/70"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-xs font-semibold uppercase tracking-wide text-slate-400">
+                    Your notes about this viewing
+                  </label>
+                  <textarea
+                    rows={4}
+                    value={note}
+                    onChange={(e) => setNote(e.target.value)}
+                    placeholder="What did you think? Favorite moments, pacing, vibes, who you watched with…"
+                    className="mt-1 w-full resize-none rounded-2xl border border-white/10 bg-slate-950/80 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 shadow-inner shadow-black/70 focus:outline-none focus:ring-2 focus:ring-pink-500/70"
+                  />
+                  <p className="mt-1 text-[11px] text-slate-500">
+                    You must give either a rating or some notes to save a viewing.
+                  </p>
+                </div>
+
+                {submitError && (
+                  <div className="rounded-xl bg-red-900/40 p-3 text-xs text-red-100">
+                    {submitError}
+                  </div>
+                )}
+
+                <div className="flex items-center justify-end gap-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={closeCreateModal}
+                    className="rounded-full px-4 py-1.5 text-xs font-medium text-slate-300 hover:text-white"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSubmitViewing}
+                    disabled={isSubmitting}
+                    className="inline-flex items-center justify-center rounded-full bg-pink-500 px-5 py-1.5 text-xs font-semibold text-white shadow-[0_8px_25px_rgba(236,72,153,0.6)] transition hover:bg-pink-400 disabled:cursor-wait disabled:bg-pink-500/70"
+                  >
+                    {isSubmitting ? "Saving…" : "Save viewing"}
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 };

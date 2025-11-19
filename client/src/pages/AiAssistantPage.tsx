@@ -1,9 +1,9 @@
 // src/pages/AiAssistantPage.tsx
 import React, { useState } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
-import bfflixLogo from "../assets/bfflix-logo.svg";
+import { useLocation } from "react-router-dom";
 import { apiPost } from "../lib/api";
-import "../styles/AiAssistantPage.css";
+import LeftSidebar from "../components/LeftSidebar";
+import TopBar from "../components/TopBar";
 
 type ChatRole = "user" | "assistant";
 
@@ -40,8 +40,6 @@ type AgentResponse = {
 };
 
 const AiAssistantPage: React.FC = () => {
-  const navigate = useNavigate();
-
   const location = useLocation();
   const locationState = location.state as { initialPrompt?: string } | null;
   const initialPrompt = locationState?.initialPrompt ?? "";
@@ -100,33 +98,33 @@ const AiAssistantPage: React.FC = () => {
 
       const now = new Date().toISOString();
 
-      // If backend gives us a pure conversation message, just show that
-      const first = data.results?.[0] as AgentRecommendationResult | undefined;
+      // NEW: Always prioritize ANY conversation-style message from backend
+      const convoResult = data.results?.find(
+        (r: any) => r.type === "conversation"
+      ) as { type: "conversation"; message: string } | undefined;
 
-      if (first && first.type === "conversation") {
+      if (convoResult) {
         const assistantMessage: ChatMessage = {
           id: `assistant-${now}`,
           role: "assistant",
           createdAt: now,
-          content: first.message,
+          content: convoResult.message,
         };
         setMessages((prev) => [...prev, assistantMessage]);
-      } else if (data.results && data.results.length > 0) {
-        // ✅ More conversational formatter for recs
-        const recs = data.results.filter(
-          (r): r is Extract<AgentRecommendationResult, { type: "movie" | "tv" }> =>
-            r.type === "movie" || r.type === "tv"
-        );
+        return;
+      }
 
-        const recLines = recs.map((r, idx) => {
+      // If no conversation message, fallback to recommendation handling
+      const recs = data.results?.filter(
+        (r: any) => r.type === "movie" || r.type === "tv"
+      ) || [];
+
+      if (recs.length > 0) {
+        const recLines = recs.map((r: any, idx: number) => {
           const header =
             idx === 0
-              ? `First up: ${r.title}${
-                  r.year ? ` (${r.year})` : ""
-                } ${r.type === "movie" ? "– Movie" : "– TV"}`
-              : `${idx + 1}. ${r.title}${
-                  r.year ? ` (${r.year})` : ""
-                } ${r.type === "movie" ? "– Movie" : "– TV"}`;
+              ? `First up: ${r.title}${r.year ? ` (${r.year})` : ""} ${r.type === "movie" ? "– Movie" : "– TV"}`
+              : `${idx + 1}. ${r.title}${r.year ? ` (${r.year})` : ""} ${r.type === "movie" ? "– Movie" : "– TV"}`;
 
           const reason = r.reason ? r.reason.trim() : "";
           const where =
@@ -142,24 +140,21 @@ const AiAssistantPage: React.FC = () => {
           role: "assistant",
           createdAt: now,
           content:
-            recLines.length > 0
-              ? `Here are a few things I think you'd vibe with:\n\n${recLines.join(
-                  "\n\n"
-                )}`
-              : "Here are some picks I found based on what you said.",
-        };
-
-        setMessages((prev) => [...prev, assistantMessage]);
-      } else {
-        const assistantMessage: ChatMessage = {
-          id: `assistant-${now}`,
-          role: "assistant",
-          createdAt: now,
-          content:
-            "I had trouble finding good suggestions for that. Try asking in a different way or mention a few shows or movies you like.",
+            `Here are a few things I think you'd vibe with:\n\n${recLines.join("\n\n")}`,
         };
         setMessages((prev) => [...prev, assistantMessage]);
+        return;
       }
+
+      // Final fallback if nothing useful returned
+      const assistantMessage: ChatMessage = {
+        id: `assistant-${now}`,
+        role: "assistant",
+        createdAt: now,
+        content:
+          "I had trouble finding good suggestions for that. Try asking in a different way or mention a few shows or movies you like.",
+      };
+      setMessages((prev) => [...prev, assistantMessage]);
     } catch (err) {
       console.error("AI Assistant error", err);
       setError("Something went wrong talking to the AI. Please try again.");
@@ -185,144 +180,93 @@ const AiAssistantPage: React.FC = () => {
     }
   };
 
-  const handleLogout = () => {
-    localStorage.removeItem("token");
-    sessionStorage.removeItem("token");
-    localStorage.removeItem("authToken");
-    sessionStorage.removeItem("authToken");
-    localStorage.clear();
-    sessionStorage.clear();
-    navigate("/login");
-  };
-
   return (
-    <div className="app-shell">
-      <div className="app-main-layout">
-        {/* LEFT SIDEBAR (same structure as Home / Circles) */}
-        <aside className="app-sidebar">
-          <div className="app-sidebar-brand">
-            <img
-              src={bfflixLogo}
-              alt="BFFLIX"
-              className="app-sidebar-logo-img"
-            />
-          </div>
+    <div className="min-h-screen bg-app-gradient text-slate-50">
+      {/* Global top bar across the entire app */}
+      <TopBar />
 
-          <nav className="app-sidebar-nav">
-            <button
-              className="app-nav-item"
-              type="button"
-              onClick={() => navigate("/home")}
-            >
-              <span className="app-nav-icon">🏠</span>
-              <span>Home</span>
-            </button>
-            <button
-              className="app-nav-item"
-              type="button"
-              onClick={() => navigate("/circles")}
-            >
-              <span className="app-nav-icon">👥</span>
-              <span>Circles</span>
-            </button>
-            <button
-              className="app-nav-item"
-              type="button"
-              onClick={() => navigate("/viewings")}
-            >
-              <span className="app-nav-icon">🎬</span>
-              <span>Viewings</span>
-            </button>
-           
-            <button
-              className="app-nav-item app-nav-item--active"
-              type="button"
-              onClick={() => navigate("/ai")}
-            >
-              <span className="app-nav-icon">✨</span>
-              <span>AI Assistant</span>
-            </button>
-            
-            <button
-              className="app-nav-item"
-              type="button"
-              onClick={() => navigate("/profile")}
-            >
-              <span className="app-nav-icon">👤</span>
-              <span>Profile</span>
-            </button>
-          </nav>
+      <div className="flex">
+        {/* Global left sidebar */}
+        <LeftSidebar />
 
-          <button
-            className="app-logout-button"
-            type="button"
-            onClick={handleLogout}
-          >
-            Log out
-          </button>
-        </aside>
-
-        {/* CENTER: AI CHAT */}
-        <main className="assistant-main">
-          <header className="assistant-header">
-            <div className="assistant-title-row">
-              <div className="assistant-avatar">
+        {/* Main AI assistant content */}
+        <main className="flex-1 pt-12 pb-10 px-4 lg:px-10 flex">
+          <section className="w-full flex flex-col gap-4">
+            {/* Header row */}
+            <header className="flex items-center gap-4">
+              <div className="h-12 w-12 rounded-full bg-gradient-to-br from-pink-500 to-fuchsia-500 flex items-center justify-center text-2xl shadow-lg">
                 <span>✨</span>
               </div>
               <div>
-                <h1 className="assistant-title">AI Assistant</h1>
-                <p className="assistant-subtitle">
+                <h1 className="text-2xl font-semibold tracking-tight">AI Assistant</h1>
+                <p className="text-sm text-slate-300">
                   Your personal entertainment companion
                 </p>
               </div>
-            </div>
-          </header>
+            </header>
 
-          <section className="assistant-chat">
-            <div className="assistant-messages">
-              {messages.map((m) => (
-                <div
-                  key={m.id}
-                  className={
-                    m.role === "assistant"
-                      ? "assistant-message assistant-message--assistant"
-                      : "assistant-message assistant-message--user"
-                  }
-                >
-                  <div className="assistant-message-bubble">
-                    {m.content.split("\n").map((line, idx) => (
-                      <p key={idx}>{line}</p>
-                    ))}
+            {/* Chat surface */}
+            <div className="flex-1 min-h-[420px] rounded-3xl bg-black/40 border border-white/5 shadow-[0_24px_60px_rgba(0,0,0,0.8)] backdrop-blur-md flex flex-col">
+              {/* Messages */}
+              <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-4">
+                {messages.map((m) => (
+                  <div
+                    key={m.id}
+                    className={
+                      m.role === "assistant"
+                        ? "flex justify-start"
+                        : "flex justify-end"
+                    }
+                  >
+                    <div
+                      className={
+                        m.role === "assistant"
+                          ? "max-w-[80%] rounded-2xl bg-slate-900/80 border border-fuchsia-500/30 px-4 py-3 text-sm leading-relaxed shadow-lg"
+                          : "max-w-[80%] rounded-2xl bg-gradient-to-r from-pink-500 to-fuchsia-500 px-4 py-3 text-sm leading-relaxed shadow-lg"
+                      }
+                    >
+                      {m.content.split("\n").map((line, idx) => (
+                        <p key={idx} className="whitespace-pre-wrap">
+                          {line}
+                        </p>
+                      ))}
+                    </div>
                   </div>
+                ))}
+              </div>
+
+              {/* Input bar */}
+              <div className="border-t border-white/5 px-4 py-3 sm:px-5 sm:py-4 bg-black/40 rounded-b-3xl">
+                {error && (
+                  <div className="mb-2 rounded-xl bg-red-500/10 border border-red-500/40 px-3 py-2 text-xs text-red-200">
+                    {error}
+                  </div>
+                )}
+                <div className="flex items-end gap-3">
+                  <textarea
+                    className="flex-1 resize-none rounded-2xl border border-white/10 bg-black/40 px-3 py-2 text-sm text-slate-50 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-pink-500/70 focus:border-pink-500/70 shadow-inner"
+                    placeholder="Ask me anything about movies, shows, or recommendations..."
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    onKeyDown={handleKeyDown}
+                    rows={3}
+                  />
+                  <button
+                    type="button"
+                    className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-pink-500 to-fuchsia-500 text-lg shadow-[0_10px_30px_rgba(236,72,153,0.6)] disabled:opacity-60 disabled:shadow-none"
+                    onClick={handleSend}
+                    disabled={isSending || !input.trim()}
+                    aria-label="Send message"
+                  >
+                    {isSending ? "…" : "➤"}
+                  </button>
                 </div>
-              ))}
+                <p className="mt-2 text-[11px] text-slate-400 text-right">
+                  Press Enter to send, Shift+Enter for a new line
+                </p>
+              </div>
             </div>
           </section>
-
-          <footer className="assistant-input-bar">
-            {error && <div className="assistant-error">{error}</div>}
-            <div className="assistant-input-row">
-              <textarea
-                className="assistant-input"
-                placeholder="Ask me anything about movies, shows, or recommendations..."
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={handleKeyDown}
-                rows={3}
-              />
-              <button
-                type="button"
-                className="assistant-send-button"
-                onClick={handleSend}
-                disabled={isSending || !input.trim()}
-              >
-                {isSending ? "…" : "➤"}
-              </button>
-            </div>
-            <div className="assistant-hint">
-              Press Enter to send, Shift+Enter for a new line
-            </div>
-          </footer>
         </main>
       </div>
     </div>
