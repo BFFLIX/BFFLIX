@@ -4,7 +4,7 @@ import React, { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { apiGet, apiPost, apiDelete } from "../lib/api";
-import bfflixLogo from "../assets/bfflix-logo.svg";
+import TopBar from "../components/TopBar";
 
 
 // ----------------- Types -----------------
@@ -273,6 +273,7 @@ const HomePage: React.FC = () => {
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [currentUserName, setCurrentUserName] = useState<string | null>(null);
+  const [currentUserAvatarUrl, setCurrentUserAvatarUrl] = useState<string | null>(null);
   const [circles, setCircles] = useState<Circle[]>([]);
   const [aiSuggestions] = useState<AiSuggestion[]>(STATIC_AI_SUGGESTIONS);
   const [isLoading, setIsLoading] = useState(false);
@@ -413,6 +414,10 @@ const HomePage: React.FC = () => {
         }
         if (me?.name) {
           setCurrentUserName(me.name as string);
+        }
+        if (typeof me?.avatarUrl === "string") {
+          const cleanedAvatar = me.avatarUrl.trim();
+          setCurrentUserAvatarUrl(cleanedAvatar ? cleanedAvatar : null);
         }
       } catch (err) {
         console.warn("Failed to load /me for current user id", err);
@@ -730,25 +735,10 @@ const HomePage: React.FC = () => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#05010f] via-[#080016] to-black text-slate-100 flex flex-col">
       {/* Topbar */}
-      <div className="flex items-center justify-between px-6 py-4 border-b border-white/5 bg-black/40 backdrop-blur">
-        <div className="flex items-center gap-3">
-          <img
-            src={bfflixLogo}
-            alt="BFFlix"
-            className="h-10 w-auto drop-shadow-[0_0_18px_rgba(255,0,122,0.6)]"
-          />
-        </div>
-        <button
-          type="button"
-          className="flex items-center gap-2 px-3 py-2 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 transition"
-          onClick={() => navigate("/profile")}
-        >
-          <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br from-pink-500 to-red-500 text-sm">
-            👤
-          </span>
-          <span className="font-medium text-sm">{currentUserName || "Profile"}</span>
-        </button>
-      </div>
+      <TopBar
+        currentUserName={currentUserName}
+        currentUserAvatarUrl={currentUserAvatarUrl}
+      />
 
       <div className="flex flex-1 min-h-0">
         {/* Left sidebar */}
