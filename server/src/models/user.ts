@@ -58,6 +58,7 @@ const userSchema = new Schema(
     services: [{ type: String, enum: SERVICES, default: [] }],
     avatarUrl: { type: String, default: "" },
     isAdmin: { type: Boolean, default: false },
+    isVerified: { type: Boolean, default: false },
 
     // Lockout + suspension
     isSuspended: { type: Boolean, default: false },
