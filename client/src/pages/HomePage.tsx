@@ -902,7 +902,7 @@ const HomePage: React.FC = () => {
                 </header>
                 <div className="px-6 py-4 space-y-4">
                   {/* Search */}
-                  <div>
+                  <div className="relative">
                     <label className="block mb-1 font-semibold">
                       Search for a {createType === "movie" ? "movie" : "show"}
                     </label>
@@ -926,12 +926,12 @@ const HomePage: React.FC = () => {
                       </div>
                     )}
                     {searchResults.length > 0 && (
-                      <ul className="mt-1 bg-white shadow rounded border z-10 absolute w-[calc(100%-3rem)] max-w-lg">
+                      <ul className="mt-1 absolute left-0 right-0 z-20 max-h-64 overflow-auto bg-[#05010f]/95 text-slate-100 shadow-[0_18px_40px_rgba(0,0,0,0.95)] rounded-xl border border-white/15">
                         {searchResults.map((r) => (
                           <li key={r.id}>
                             <button
                               type="button"
-                              className="block w-full text-left px-4 py-2 hover:bg-blue-50"
+                              className="block w-full text-left px-4 py-2 text-sm text-slate-100 hover:bg-white/10"
                               onClick={() => handleSelectTitle(r)}
                             >
                               {r.label}
