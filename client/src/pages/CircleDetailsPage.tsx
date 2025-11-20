@@ -13,6 +13,7 @@ type Member = {
   name: string;
   email?: string;
   username?: string;
+  avatarUrl?: string;
   role: MemberRole;
   isOwner?: boolean;
   isModerator?: boolean;
@@ -88,6 +89,10 @@ const CircleDetailsPage = () => {
             name: m?.name || "Member",
             email: m?.email,
             username: m?.username,
+            avatarUrl:
+              typeof m?.avatarUrl === "string" && m.avatarUrl.trim().length
+                ? m.avatarUrl.trim()
+                : undefined,
             role:
               m?.role === "owner" || m?.role === "moderator"
                 ? (m.role as MemberRole)
@@ -473,8 +478,16 @@ const CircleDetailsPage = () => {
                             className="flex items-center justify-between gap-3 rounded-xl border border-white/5 bg-white/5/10 px-3 py-2.5"
                           >
                             <div className="flex items-center gap-3">
-                              <div className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-pink-500 to-red-500 text-sm font-semibold">
-                                {m.name?.[0]?.toUpperCase() || "?"}
+                              <div className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-pink-500 to-red-500 text-sm font-semibold overflow-hidden">
+                                {m.avatarUrl ? (
+                                  <img
+                                    src={m.avatarUrl}
+                                    alt={`${m.name || "Member"} avatar`}
+                                    className="h-full w-full object-cover"
+                                  />
+                                ) : (
+                                  <span>{m.name?.[0]?.toUpperCase() || "?"}</span>
+                                )}
                               </div>
                               <div className="flex flex-col">
                               <span className="text-sm font-medium text-slate-50">

@@ -176,7 +176,7 @@ r.get("/:id", requireAuth, async (req: AuthedRequest, res) => {
 
   const circle = await Circle.findOne({ _id: idCheck.data, members: req.user!.id })
     .select("name description visibility createdBy members moderators inviteCode createdAt updatedAt")
-    .populate("members", "name email username")
+    .populate("members", "name email username avatarUrl")
     .lean({ virtuals: true });
 
   if (!circle) return res.status(404).json({ error: "Circle not found or access denied" });
@@ -193,11 +193,14 @@ r.get("/:id", requireAuth, async (req: AuthedRequest, res) => {
         const memberId = normalizeId(member?.id || member?._id || member);
         const isOwner = memberId === ownerId;
         const isModerator = moderators.includes(memberId);
+        const avatar =
+          typeof member?.avatarUrl === "string" ? member.avatarUrl.trim() : "";
         return {
           id: memberId,
           name: member?.name || "Member",
           email: member?.email,
           username: member?.username,
+          avatarUrl: avatar || undefined,
           isOwner,
           isModerator,
           role: isOwner ? "owner" : isModerator ? "moderator" : "member",
