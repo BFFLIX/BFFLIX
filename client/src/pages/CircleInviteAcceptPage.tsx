@@ -49,7 +49,7 @@ const CircleInviteAcceptPage = () => {
         <main className="flex-1 flex items-center justify-center px-4 py-10">
           <div className="w-full max-w-lg rounded-3xl border border-white/10 bg-slate-950/80 p-8 text-center shadow-2xl">
             <div className="text-5xl mb-4">
-              {status === "success" ? "✔" : status === "error" ? "!" : "..."}
+              {status === "success" ? ":)" : status === "error" ? "!" : "..."}
             </div>
             <h1 className="text-2xl font-semibold mb-2">Circle invitation</h1>
             <p className="text-slate-300 mb-6">{message}</p>

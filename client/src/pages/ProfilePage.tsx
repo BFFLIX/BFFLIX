@@ -41,6 +41,7 @@ type ProfileViewing = Viewing & {
 
 type UserResponse = {
   name: string;
+  username?: string;
   avatarUrl?: string | null;
 };
 
@@ -74,6 +75,7 @@ const MAX_RECENT_VIEWINGS = 3;
 const MAX_AVATAR_BYTES = 600 * 1024; // ~600KB
 const VIEWINGS_VISIBILITY_KEY = "profile:viewingsVisibility";
 const DATA_URL_REGEX = /^data:image\/[a-zA-Z]+;base64,/;
+const USERNAME_REGEX = /^[a-z0-9._-]{3,30}$/i;
 
 const getCircleBase = (circle: Circle): Circle => {
   return (circle.circle as Circle) || circle;
@@ -140,11 +142,13 @@ export default function ProfilePage() {
 
   // User info state
   const [userName, setUserName] = useState<string>("");
+  const [userUsername, setUserUsername] = useState<string>("");
   const [avatarUrl, setAvatarUrl] = useState<string>("");
   const [userLoading, setUserLoading] = useState(false);
   const [userError, setUserError] = useState<string | null>(null);
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [editName, setEditName] = useState("");
+  const [editUsername, setEditUsername] = useState("");
   const [editAvatarUrl, setEditAvatarUrl] = useState("");
   const [savingProfile, setSavingProfile] = useState(false);
   const [profileSaveError, setProfileSaveError] = useState<string | null>(null);
@@ -289,6 +293,7 @@ export default function ProfilePage() {
         setUserError(null);
         const res = await apiGet<UserResponse>("/me");
         setUserName(res.name);
+        setUserUsername(res.username || "");
         setAvatarUrl(res.avatarUrl || "");
       } catch (err: any) {
         console.error("Failed to load user", err);
@@ -413,6 +418,7 @@ export default function ProfilePage() {
   const openEditProfile = () => {
     setIsEditingProfile(true);
     setEditName(userName);
+    setEditUsername(userUsername);
     setEditAvatarUrl(avatarUrl);
     setEditServiceIds(userServices.map((svc) => String(svc._id)));
     setServiceSearch("");
@@ -443,12 +449,20 @@ export default function ProfilePage() {
       setProfileSaveError("Display name is required.");
       return;
     }
+    const trimmedUsername = editUsername.trim();
+    if (!USERNAME_REGEX.test(trimmedUsername)) {
+      setProfileSaveError(
+        "Username must be 3-30 characters and can include letters, numbers, dots, dashes, and underscores."
+      );
+      return;
+    }
 
     try {
       setSavingProfile(true);
       setProfileSaveError(null);
       const profilePayload = {
         name: editName.trim(),
+        username: trimmedUsername.toLowerCase(),
         avatarUrl: editAvatarUrl.trim(),
       };
 
@@ -462,6 +476,7 @@ export default function ProfilePage() {
       ]);
 
       setUserName(updatedProfile.name);
+      setUserUsername(updatedProfile.username || trimmedUsername.toLowerCase());
       setAvatarUrl(updatedProfile.avatarUrl || "");
 
       const normalizedServices = Array.isArray(updatedServices?.data)
@@ -570,9 +585,12 @@ export default function ProfilePage() {
                     </div>
 
                     {!userLoading && !userError && (
-                      <p className="mt-1 text-sm text-slate-200">
-                        Welcome back, {userName || "BFFLixer"}!
-                      </p>
+                      <div className="mt-1 text-sm text-slate-200">
+                        <div className="font-semibold text-base">{userName || "BFFLixer"}</div>
+                        {userUsername && (
+                          <div className="text-xs text-slate-400">@{userUsername}</div>
+                        )}
+                      </div>
                     )}
                     <p className="mt-1 text-xs text-slate-400">
                       Keep tabs on what you are watching and the circles you hang out in.
@@ -654,6 +672,22 @@ export default function ProfilePage() {
                         required
                         className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-50 outline-none ring-0 placeholder:text-slate-500 focus:border-rose-400 focus:ring-1 focus:ring-rose-400"
                       />
+                    </label>
+
+                    <label className="space-y-1 text-xs text-slate-200">
+                      <span className="font-medium">Username</span>
+                      <input
+                        type="text"
+                        value={editUsername}
+                        onChange={(e) => setEditUsername(e.target.value)}
+                        maxLength={30}
+                        required
+                        placeholder="yourname"
+                        className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-50 outline-none ring-0 placeholder:text-slate-500 focus:border-rose-400 focus:ring-1 focus:ring-rose-400"
+                      />
+                      <small className="block text-[0.68rem] text-slate-400">
+                        Only letters, numbers, dots, dashes, and underscores. Appears on your invite links.
+                      </small>
                     </label>
 
                     <label className="space-y-1 text-xs text-slate-200">

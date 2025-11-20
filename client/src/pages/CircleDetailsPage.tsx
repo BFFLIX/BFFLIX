@@ -12,6 +12,7 @@ type Member = {
   id: string;
   name: string;
   email?: string;
+  username?: string;
   role: MemberRole;
   isOwner?: boolean;
   isModerator?: boolean;
@@ -84,6 +85,7 @@ const CircleDetailsPage = () => {
             id: String(m?.id || m?._id || m),
             name: m?.name || "Member",
             email: m?.email,
+            username: m?.username,
             role:
               m?.role === "owner" || m?.role === "moderator"
                 ? (m.role as MemberRole)
@@ -459,14 +461,19 @@ const CircleDetailsPage = () => {
                                 {m.name?.[0]?.toUpperCase() || "?"}
                               </div>
                               <div className="flex flex-col">
-                                <span className="text-sm font-medium text-slate-50">
-                                  {m.name}
+                              <span className="text-sm font-medium text-slate-50">
+                                {m.name}
+                              </span>
+                              {m.email && (
+                                <span className="text-xs text-slate-400">
+                                  {m.email}
                                 </span>
-                                {m.email && (
-                                  <span className="text-xs text-slate-400">
-                                    {m.email}
-                                  </span>
-                                )}
+                              )}
+                              {m.username && (
+                                <span className="text-xs text-slate-500">
+                                  @{m.username}
+                                </span>
+                              )}
                                 <div className="mt-1 flex flex-wrap gap-1">
                                   <span
                                     className={`text-[11px] uppercase tracking-wide px-2 py-0.5 rounded-full border ${
@@ -657,7 +664,7 @@ const CircleDetailsPage = () => {
               <input
                 type="text"
                 className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-pink-500/70"
-                placeholder="ex: test@example.com or Test User"
+                placeholder="ex: @username or test@example.com"
                 value={inviteIdentifier}
                 onChange={(e) => setInviteIdentifier(e.target.value)}
               />

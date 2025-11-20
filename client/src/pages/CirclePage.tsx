@@ -265,14 +265,23 @@ const CirclesPage: React.FC = () => {
                   Join circles to connect with others who share your interests in movies and shows.
                 </p>
               </div>
-              <button
-                type="button"
-                className="absolute right-0 top-0 flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-pink-600 via-pink-500 to-pink-400 text-white font-semibold rounded-xl shadow hover:brightness-110 transition"
-                onClick={handleCreateCircleClick}
-              >
-                <span className="text-lg font-bold">+</span>
-                <span className="hidden sm:inline">Create Circle</span>
-              </button>
+              <div className="absolute right-0 top-0 flex items-center gap-2">
+                <button
+                  type="button"
+                  className="px-4 py-2 text-sm font-semibold rounded-xl border border-white/15 text-slate-200 hover:bg-white/10 transition"
+                  onClick={() => navigate("/circles/invitations")}
+                >
+                  Pending invites
+                </button>
+                <button
+                  type="button"
+                  className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-pink-600 via-pink-500 to-pink-400 text-white font-semibold rounded-xl shadow hover:brightness-110 transition"
+                  onClick={handleCreateCircleClick}
+                >
+                  <span className="text-lg font-bold">+</span>
+                  <span className="hidden sm:inline">Create Circle</span>
+                </button>
+              </div>
             </div>
 
             {/* Tabs and search */}
