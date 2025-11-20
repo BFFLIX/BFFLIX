@@ -1,119 +1,87 @@
 
-// src/pages/AuthPage.tsx
-import React, { useState } from "react";
-import { useNavigate } from "react-router-dom";
-import Logo from "../assets/bfflix-logo.svg";
+// client/src/pages/AuthPage.tsx
+import { useState, useEffect } from "react";
+import type { FormEvent } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { apiPost } from "../lib/api";
+import bfflixLogo from "../assets/bfflix-logo.svg";
 
-type Mode = "login" | "signup";
+type Mode = "login" | "register";
 
-// Point this at your Express server base URL
-// For dev: http://localhost:4000 (or whatever your server runs on)
-// For prod: set VITE_API_BASE_URL=https://bfflix.onrender.com
-const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL ||
-  (import.meta.env.DEV ? "http://localhost:8080" : "https://bfflix.onrender.com");
+interface AuthResponse {
+  token: string;
+  user: {
+    id: string;
+    email: string;
+    name?: string;
+  };
+}
+
+type PasswordStrength = {
+  score: number; // 0–4
+  label: string;
+};
+
+function evaluatePasswordStrength(password: string): PasswordStrength {
+  if (!password) return { score: 0, label: "" };
+
+  let score = 0;
+
+  // Length
+  if (password.length >= 8) score++;
+  if (password.length >= 12) score++;
+
+  // Character variety
+  if (/[a-z]/.test(password) && /[A-Z]/.test(password)) score++;
+  if (/\d/.test(password)) score++;
+  if (/[^A-Za-z0-9]/.test(password)) score++;
+
+  // Clamp score to 0–4
+  if (score > 4) score = 4;
+
+  let label = "Very weak";
+  if (score <= 1) label = "Weak";
+  else if (score === 2) label = "Okay";
+  else if (score === 3) label = "Strong";
+  else if (score === 4) label = "Very strong";
+
+  return { score, label };
+}
 
 export default function AuthPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+
   const [mode, setMode] = useState<Mode>("login");
-
-  // --- login form state ---
-  const [loginEmail, setLoginEmail] = useState("");
-  const [loginPassword, setLoginPassword] = useState("");
-
-  // --- signup form state ---
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
-  const [signupEmail, setSignupEmail] = useState("");
-  const [signupPassword, setSignupPassword] = useState("");
-  const [signupConfirmPassword, setSignupConfirmPassword] = useState("");
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
+  const [acceptedPrivacy, setAcceptedPrivacy] = useState(false);
 
-  // --- ui state ---
   const [isLoading, setIsLoading] = useState(false);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [resetMsg, setResetMsg] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [infoMessage, setInfoMessage] = useState<string | null>(null);
 
-  const [isResetModalOpen, setIsResetModalOpen] = useState(false);
-  const [resetEmail, setResetEmail] = useState("");
-  const [isResetLoading, setIsResetLoading] = useState(false);
+  const [showTerms, setShowTerms] = useState(false);
+  const [showPrivacy, setShowPrivacy] = useState(false);
 
-  const [acceptTerms, setAcceptTerms] = useState(false);
-  const [acceptPrivacy, setAcceptPrivacy] = useState(false);
+  // Forgot-password modal state
+  const [showForgotModal, setShowForgotModal] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState("");
+  const [isForgotSubmitting, setIsForgotSubmitting] = useState(false);
 
-  const [isPrivacyModalOpen, setIsPrivacyModalOpen] = useState(false);
-  const [isTermsModalOpen, setIsTermsModalOpen] = useState(false);
+  // Show / hide password state
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
+  // Password strength state (for the main password field)
+  const [passwordStrength, setPasswordStrength] =
+    useState<PasswordStrength | null>(null);
 
-  // Helper to pull a nice message from your error shapes
-  const extractErrorMessage = async (res: Response) => {
-    let data: any = null;
-    try {
-      data = await res.json();
-    } catch {
-      return "Something went wrong. Please try again.";
-    }
-
-    if (data?.error === "validation_error" && data.details) {
-      const fields = Object.values(data.details) as unknown as string[][];
-      const firstField = fields[0];
-      if (firstField && firstField[0]) return firstField[0];
-    }
-
-    if (data?.error === "weak_password") {
-      return (
-        data.details?.[0] ||
-        "Password is too weak. Please choose a stronger one."
-      );
-    }
-
-    if (data?.error === "email_already_in_use") {
-      return "An account with this email already exists.";
-    }
-
-    if (data?.error === "invalid_credentials") {
-      return "Invalid email or password.";
-    }
-
-    if (data?.error === "account_locked") {
-      return (
-        data.message ||
-        "Too many failed attempts. Your account is temporarily locked."
-      );
-    }
-
-    if (data?.error === "account_suspended") {
-      return "This account has been suspended. Contact support.";
-    }
-
-    if (typeof data?.message === "string") return data.message;
-    if (typeof data?.error === "string") return data.error;
-
-    return "Something went wrong. Please try again.";
-  };
-
-  // --- handlers ---
-
-  const handleLoginSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    setErrorMsg(null);
-    setResetMsg(null);
-    setIsLoading(true);
-
-    try {
-      const res = await fetch(`${API_BASE_URL}/auth/login`, {
-        method: "POST",
-        credentials: "include", // if you later set httpOnly cookies
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          email: loginEmail,
-          password: loginPassword,
-        }),
-      });
-
-      if (!res.ok) {
-        const msg = await extractErrorMessage(res);
-        throw new Error(msg);
-      }
+  const isLogin = mode === "login";
 
       const data = await res.json();
       // Backend returns { token, user: { id, email, name } }
@@ -136,918 +104,996 @@ export default function AuthPage() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [searchParams]);
 
-  const handleSignupSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+  function switchMode(nextMode: Mode) {
+    setMode(nextMode);
+    setError(null);
+    setInfoMessage(null);
+
+    if (nextMode === "login") {
+      // When going back to login, we can ignore register-only fields
+      setAcceptedTerms(false);
+      setAcceptedPrivacy(false);
+      setConfirmPassword("");
+    }
+  }
+
+  async function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    setErrorMsg(null);
-    setResetMsg(null);
+    setError(null);
+    setInfoMessage(null);
 
-    if (signupPassword !== signupConfirmPassword) {
-      setErrorMsg("Passwords do not match.");
+    if (!email || !password) {
+      setError("Please enter both email and password.");
       return;
     }
 
-    const fullName = `${firstName} ${lastName}`.trim();
-    if (!fullName) {
-      setErrorMsg("Please enter your name.");
-      return;
-    }
+    if (!isLogin) {
+      // Register validations
+      if (!firstName.trim() || !lastName.trim()) {
+        setError("Please enter both first and last name.");
+        return;
+      }
+      if (!acceptedTerms || !acceptedPrivacy) {
+        setError(
+          "Please accept both the Terms and Conditions and the Privacy Policy to create an account."
+        );
+        return;
+      }
 
-    if (!acceptTerms || !acceptPrivacy) {
-      setErrorMsg(
-        "Please agree to both the Terms & Conditions and the Privacy Policy."
-      );
-      return;
+      if (!confirmPassword) {
+        setError("Please confirm your password.");
+        return;
+      }
+
+      if (password !== confirmPassword) {
+        setError("Passwords do not match. Please try again.");
+        return;
+      }
     }
 
     setIsLoading(true);
 
     try {
-      const res = await fetch(`${API_BASE_URL}/auth/signup`, {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          email: signupEmail,
-          password: signupPassword,
-          name: fullName, // matches signupSchema on backend
-        }),
-      });
+      const endpoint = isLogin ? "/auth/login" : "/auth/signup";
+      const payload: Record<string, any> = { email, password };
 
-      if (!res.ok) {
-        const msg = await extractErrorMessage(res);
-        throw new Error(msg);
+      if (!isLogin) {
+        const fullName = `${firstName} ${lastName}`.trim();
+        payload.name = fullName;
       }
 
-      const data = await res.json();
-      console.log("Signup success:", data);
+      const data = await apiPost<AuthResponse>(endpoint, payload);
 
-      // After a successful signup, switch to login tab
-      setMode("login");
-      setErrorMsg(null);
+      // Persist token in localStorage as a backup for when cookies are blocked
+      try {
+        window.localStorage.setItem("bfflix_token", data.token);
+      } catch {
+        // ignore storage failures
+      }
+
+      navigate("/home");
     } catch (err: any) {
-      console.error(err);
-      setErrorMsg(err.message || "Sign up failed. Please try again.");
+      const msg =
+        err?.message === "missing_token"
+          ? "Login worked, but your browser blocked the session cookie. Please enable cookies for BFFlix or try another browser."
+          : err?.message || "Something went wrong. Please try again.";
+      setError(msg);
     } finally {
       setIsLoading(false);
     }
-  };
+  }
 
-  const handleRequestReset = async (email: string) => {
-    setErrorMsg(null);
-    setResetMsg(null);
+  async function handleForgotPassword(e: FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setInfoMessage(null);
 
-    const trimmed = email.trim();
+    const trimmed = forgotEmail.trim();
     if (!trimmed) {
-      setErrorMsg("Enter your email to reset your password.");
+      setError("Please enter the email associated with your account.");
       return;
     }
 
-    setIsResetLoading(true);
-
     try {
-      const res = await fetch(`${API_BASE_URL}/auth/request-reset`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: trimmed }),
-      });
+      setIsForgotSubmitting(true);
+      await apiPost("/auth/password/forgot", { email: trimmed });
 
-      // Your backend always returns { ok: true } even if user not found
-      if (!res.ok) {
-        const msg = await extractErrorMessage(res);
-        throw new Error(msg);
-      }
+      // Pre-fill the main form email so the user sees it next time
+      setEmail(trimmed);
+      setShowForgotModal(false);
+      setForgotEmail("");
 
-      setResetMsg(
-        "If an account exists with that email, a reset link has been sent."
+      setInfoMessage(
+        "If an account exists for that email, you will receive a password reset link in your inbox shortly."
       );
-      setIsResetModalOpen(false);
     } catch (err: any) {
-      console.error(err);
-      setErrorMsg(
-        err.message || "Could not send reset link. Please try again later."
-      );
+      const msg =
+        err?.message ||
+        "Something went wrong while sending the reset link. Please try again.";
+      setError(msg);
     } finally {
-      setIsResetLoading(false);
+      setIsForgotSubmitting(false);
     }
-  };
+  }
 
+  // Update password + strength together
+  function handlePasswordChange(value: string) {
+    setPassword(value);
+    if (!value) {
+      setPasswordStrength(null);
+    } else {
+      setPasswordStrength(evaluatePasswordStrength(value));
+    }
+  }
 
-  // --- render ---
+  const strengthPercent =
+    passwordStrength && passwordStrength.score > 0
+      ? (passwordStrength.score / 4) * 100
+      : 0;
+
+  const strengthColor =
+    !passwordStrength || !passwordStrength.label
+      ? "bg-zinc-700"
+      : passwordStrength.score <= 1
+      ? "bg-red-500"
+      : passwordStrength.score === 2
+      ? "bg-yellow-500"
+      : passwordStrength.score === 3
+      ? "bg-emerald-500"
+      : "bg-emerald-400";
 
   return (
-    <div className="auth-shell">
-      {/* subtle animated orbs (CSS already handles these classes) */}
-      <div className="auth-orb auth-orb--left" />
-      <div className="auth-orb auth-orb--right" />
-      <div className="auth-orb auth-orb--bottom" />
-
-      <div className="auth-content">
-        {/* Logo */}
-        <div className="auth-logo">
-          <img src={Logo} alt="BFFLIX" />
-        </div>
-
-        {/* Card */}
-        <div className="auth-card">
-          {/* Tabs */}
-          <div className="auth-tabs">
-            <button
-              type="button"
-              className={
-                "auth-tab" + (mode === "login" ? " auth-tab--active" : "")
-              }
-              onClick={() => {
-                setMode("login");
-                setErrorMsg(null);
-                setResetMsg(null);
-              }}
-            >
-              Login
-            </button>
-            <button
-              type="button"
-              className={
-                "auth-tab" + (mode === "signup" ? " auth-tab--active" : "")
-              }
-              onClick={() => {
-                setMode("signup");
-                setErrorMsg(null);
-                setResetMsg(null);
-              }}
-            >
-              Sign Up
-            </button>
-          </div>
-
-          {/* error / info messages */}
-          {errorMsg && (
-            <div
-              style={{
-                marginBottom: "0.75rem",
-                fontSize: "0.8rem",
-                color: "#ff6b81",
-              }}
-            >
-              {errorMsg}
-            </div>
-          )}
-
-          {resetMsg && (
-            <div
-              style={{
-                marginBottom: "0.75rem",
-                fontSize: "0.8rem",
-                color: "#8be9a5",
-              }}
-            >
-              {resetMsg}
-            </div>
-          )}
-
-          {mode === "login" ? (
-            <form className="auth-form" onSubmit={handleLoginSubmit}>
-              <div className="auth-field">
-                <label className="auth-label" htmlFor="login-email">
-                  Email
-                </label>
-                <input
-                  id="login-email"
-                  type="email"
-                  required
-                  placeholder="Enter your email"
-                  className="auth-input"
-                  value={loginEmail}
-                  onChange={(e) => setLoginEmail(e.target.value)}
-                />
+    <div className="min-h-screen bg-gradient-to-br from-black via-zinc-950 to-zinc-900 text-zinc-100 flex items-center justify-center px-4">
+      <div className="w-full max-w-5xl rounded-3xl bg-black/60 border border-zinc-800 shadow-[0_24px_80px_rgba(0,0,0,0.9)] backdrop-blur-xl flex flex-col md:flex-row overflow-hidden">
+        {/* Left: Auth form */}
+        <div className="w-full md:w-1/2 p-8 md:p-10 flex flex-col justify-between">
+          <div>
+            {/* Logo */}
+            <div className="flex flex-col items-center mb-8">
+              <img
+                src={bfflixLogo}
+                alt="BFFlix logo"
+                className="h-20 w-auto drop-shadow-[0_0_22px_rgba(248,113,113,0.7)]"
+              />
+              <div className="mt-2 text-[11px] uppercase tracking-[0.2em] text-zinc-400">
+                Share what you watch
               </div>
+            </div>
 
-              <div className="auth-field">
-                <label className="auth-label" htmlFor="login-password">
-                  Password
-                </label>
-                <input
-                  id="login-password"
-                  type="password"
-                  required
-                  placeholder="Enter your password"
-                  className="auth-input"
-                  value={loginPassword}
-                  onChange={(e) => setLoginPassword(e.target.value)}
-                />
-              </div>
-
-              <div className="auth-forgot-row">
+            {/* Tabs */}
+            <div className="flex justify-center mb-8">
+              <div className="inline-flex rounded-full bg-zinc-900/80 p-1 border border-zinc-800">
                 <button
                   type="button"
-                  className="auth-forgot-link"
-                  onClick={() => {
-                    setIsResetModalOpen(true);
-                    setResetEmail(loginEmail);
-                  }}
+                  onClick={() => switchMode("login")}
+                  className={`px-4 py-1.5 text-sm rounded-full transition ${
+                    isLogin
+                      ? "bg-red-600 text-white shadow-md shadow-red-900/60"
+                      : "text-zinc-400 hover:text-zinc-100"
+                  }`}
                 >
-                  Forgot password?
+                  Sign in
+                </button>
+                <button
+                  type="button"
+                  onClick={() => switchMode("register")}
+                  className={`px-4 py-1.5 text-sm rounded-full transition ${
+                    !isLogin
+                      ? "bg-red-600 text-white shadow-md shadow-red-900/60"
+                      : "text-zinc-400 hover:text-zinc-100"
+                  }`}
+                >
+                  Create account
                 </button>
               </div>
+            </div>
 
-              <button
-                type="submit"
-                className="auth-primary-button"
-                disabled={isLoading}
-              >
-                {isLoading && mode === "login" ? "Logging in..." : "Login"}
-              </button>
-            </form>
-          ) : (
-            <form className="auth-form" onSubmit={handleSignupSubmit}>
-              <div className="auth-row">
-                <div className="auth-field">
-                  <label className="auth-label" htmlFor="signup-first-name">
-                    First Name
-                  </label>
-                  <input
-                    id="signup-first-name"
-                    type="text"
-                    required
-                    placeholder="First name"
-                    className="auth-input"
-                    value={firstName}
-                    onChange={(e) => setFirstName(e.target.value)}
-                  />
-                </div>
-                <div className="auth-field">
-                  <label className="auth-label" htmlFor="signup-last-name">
-                    Last Name
-                  </label>
-                  <input
-                    id="signup-last-name"
-                    type="text"
-                    required
-                    placeholder="Last name"
-                    className="auth-input"
-                    value={lastName}
-                    onChange={(e) => setLastName(e.target.value)}
-                  />
-                </div>
+            {/* Heading + subheading */}
+            <div className="space-y-1 mb-8 text-center">
+              <h1 className="text-2xl md:text-3xl font-semibold text-white">
+                {isLogin ? "Welcome back" : "Create your BFFlix account"}
+              </h1>
+              <p className="text-sm text-zinc-400">
+                {isLogin
+                  ? "Sign in to share your watchlist, post in circles, and get smart AI suggestions."
+                  : "Sign up to start logging viewings, join circles, and get personalized recommendations."}
+              </p>
+            </div>
+
+            {/* Error + info messages */}
+            {error && (
+              <div className="mb-3 rounded-xl border border-red-800 bg-red-950/60 px-3 py-2 text-sm text-red-200">
+                {error}
               </div>
+            )}
+            {infoMessage && (
+              <div className="mb-3 rounded-xl border border-emerald-700 bg-emerald-950/60 px-3 py-2 text-sm text-emerald-200">
+                {infoMessage}
+              </div>
+            )}
 
-              <div className="auth-field">
-                <label className="auth-label" htmlFor="signup-email">
+            {/* Form */}
+            <form onSubmit={handleSubmit} className="space-y-4">
+              {!isLogin && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-medium text-zinc-300">
+                      First name
+                    </label>
+                    <input
+                      type="text"
+                      value={firstName}
+                      onChange={(e) => setFirstName(e.target.value)}
+                      placeholder="First name"
+                      className="w-full rounded-xl bg-zinc-950/80 border border-zinc-800 px-3 py-2.5 text-sm text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-red-600 focus:border-red-600 transition"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-medium text-zinc-300">
+                      Last name
+                    </label>
+                    <input
+                      type="text"
+                      value={lastName}
+                      onChange={(e) => setLastName(e.target.value)}
+                      placeholder="Last name"
+                      className="w-full rounded-xl bg-zinc-950/80 border border-zinc-800 px-3 py-2.5 text-sm text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-red-600 focus:border-red-600 transition"
+                    />
+                  </div>
+                </div>
+              )}
+
+              <div className="space-y-1.5">
+                <label className="block text-xs font-medium text-zinc-300">
                   Email
                 </label>
                 <input
-                  id="signup-email"
                   type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="you@example.com"
+                  className="w-full rounded-xl bg-zinc-950/80 border border-zinc-800 px-3 py-2.5 text-sm text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-red-600 focus:border-red-600 transition"
                   required
-                  placeholder="Enter your email"
-                  className="auth-input"
-                  value={signupEmail}
-                  onChange={(e) => setSignupEmail(e.target.value)}
                 />
               </div>
 
-              <div className="auth-field">
-                <label className="auth-label" htmlFor="signup-password">
+              {/* Password + show/hide + strength */}
+              <div className="space-y-1.5">
+                <label className="block text-xs font-medium text-zinc-300">
                   Password
                 </label>
-                <input
-                  id="signup-password"
-                  type="password"
-                  required
-                  placeholder="Create a password"
-                  className="auth-input"
-                  value={signupPassword}
-                  onChange={(e) => setSignupPassword(e.target.value)}
-                />
-              </div>
-
-
-              <div className="auth-field">
-                <label
-                  className="auth-label"
-                  htmlFor="signup-confirm-password"
-                >
-                  Confirm Password
-                </label>
-                <input
-                  id="signup-confirm-password"
-                  type="password"
-                  required
-                  placeholder="Confirm your password"
-                  className="auth-input"
-                  value={signupConfirmPassword}
-                  onChange={(e) => setSignupConfirmPassword(e.target.value)}
-                />
-              </div>
-
-              <div className="auth-terms-row">
-                <input
-                  id="terms"
-                  type="checkbox"
-                  className="auth-terms-checkbox"
-                  checked={acceptTerms}
-                  onChange={(e) => setAcceptTerms(e.target.checked)}
-                />
-                <label htmlFor="terms">
-                  I agree to the{" "}
+                <div className="relative">
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    value={password}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      if (isLogin) {
+                        setPassword(value);
+                        // Do NOT update passwordStrength in login mode
+                        setPasswordStrength(null);
+                      } else {
+                        handlePasswordChange(value);
+                      }
+                    }}
+                    placeholder={
+                      isLogin ? "Your password" : "Create a strong password"
+                    }
+                    className="w-full rounded-xl bg-zinc-950/80 border border-zinc-800 px-3 py-2.5 pr-16 text-sm text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-red-600 focus:border-red-600 transition"
+                    required
+                  />
                   <button
                     type="button"
-                    className="auth-terms-link"
-                    onClick={() => setIsTermsModalOpen(true)}
+                    onClick={() => setShowPassword((prev) => !prev)}
+                    className="absolute inset-y-0 right-3 flex items-center text-xs text-zinc-400 hover:text-zinc-100"
                   >
-                    Terms &amp; Conditions
+                    {showPassword ? "Hide" : "Show"}
                   </button>
-                </label>
+                </div>
+
+                {/* Strength meter (only show when password is non-empty and in register mode) */}
+                {!isLogin && passwordStrength && passwordStrength.label && (
+                  <div className="space-y-1">
+                    <div className="h-1.5 w-full rounded-full bg-zinc-800 overflow-hidden">
+                      <div
+                        className={`h-full ${strengthColor} transition-all duration-200`}
+                        style={{ width: `${strengthPercent}%` }}
+                      />
+                    </div>
+                    <p className="text-[11px] text-zinc-400">
+                      Password strength:{" "}
+                      <span className="font-medium text-zinc-200">
+                        {passwordStrength.label}
+                      </span>
+                    </p>
+                  </div>
+                )}
               </div>
 
-              <div className="auth-terms-row">
-                <input
-                  id="privacy"
-                  type="checkbox"
-                  className="auth-terms-checkbox"
-                  checked={acceptPrivacy}
-                  onChange={(e) => setAcceptPrivacy(e.target.checked)}
-                />
-                <label htmlFor="privacy">
-                  I agree to the{" "}
+              {/* Confirm password (register only) */}
+              {!isLogin && (
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-medium text-zinc-300">
+                    Confirm password
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={showConfirmPassword ? "text" : "password"}
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      placeholder="Repeat your password"
+                      className="w-full rounded-xl bg-zinc-950/80 border border-zinc-800 px-3 py-2.5 pr-16 text-sm text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-red-600 focus:border-red-600 transition"
+                      required
+                    />
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setShowConfirmPassword((prev) => !prev)
+                      }
+                      className="absolute inset-y-0 right-3 flex items-center text-xs text-zinc-400 hover:text-zinc-100"
+                    >
+                      {showConfirmPassword ? "Hide" : "Show"}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {isLogin && (
+                <div className="flex items-center justify-between text-xs text-zinc-400">
                   <button
                     type="button"
-                    className="auth-terms-link"
-                    onClick={() => setIsPrivacyModalOpen(true)}
+                    onClick={() => {
+                      setError(null);
+                      setInfoMessage(null);
+                      setForgotEmail(email || "");
+                      setShowForgotModal(true);
+                    }}
+                    className="text-zinc-300 hover:text-white underline underline-offset-2"
                   >
-                    Privacy Policy
+                    Forgot your password?
                   </button>
-                </label>
-              </div>
+                </div>
+              )}
+
+              {!isLogin && (
+                <div className="mt-2 space-y-2 text-[11px] text-zinc-400">
+                  <label className="flex items-start gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={acceptedTerms}
+                      onChange={(e) => setAcceptedTerms(e.target.checked)}
+                      className="mt-0.5 h-3.5 w-3.5 rounded border-zinc-600 bg-zinc-950 text-red-600 focus:ring-red-600"
+                    />
+                    <span>
+                      I agree to the{" "}
+                      <button
+                        type="button"
+                        onClick={() => setShowTerms(true)}
+                        className="text-zinc-300 underline underline-offset-2 hover:text-white"
+                      >
+                        Terms and Conditions
+                      </button>
+                      .
+                    </span>
+                  </label>
+
+                  <label className="flex items-start gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={acceptedPrivacy}
+                      onChange={(e) => setAcceptedPrivacy(e.target.checked)}
+                      className="mt-0.5 h-3.5 w-3.5 rounded border-zinc-600 bg-zinc-950 text-red-600 focus:ring-red-600"
+                    />
+                    <span>
+                      I have read and agree to the{" "}
+                      <button
+                        type="button"
+                        onClick={() => setShowPrivacy(true)}
+                        className="text-zinc-300 underline underline-offset-2 hover:text-white"
+                      >
+                        Privacy Policy
+                      </button>
+                      .
+                    </span>
+                  </label>
+                </div>
+              )}
 
               <button
                 type="submit"
-                className="auth-primary-button"
                 disabled={isLoading}
+                className="mt-2 w-full rounded-xl bg-red-600 hover:bg-red-500 text-sm font-medium text-white py-2.5 flex items-center justify-center gap-2 shadow-md shadow-red-900/60 transition disabled:opacity-60 disabled:cursor-not-allowed"
               >
-                {isLoading && mode === "signup" ? "Signing up..." : "Sign Up"}
+                {isLoading
+                  ? isLogin
+                    ? "Signing you in..."
+                    : "Creating your account..."
+                  : isLogin
+                  ? "Sign in to BFFlix"
+                  : "Create account"}
               </button>
+
+              <p className="mt-3 text-[11px] text-zinc-500 leading-relaxed">
+                You can review BFFlix{" "}
+                <button
+                  type="button"
+                  onClick={() => setShowTerms(true)}
+                  className="text-zinc-300 underline underline-offset-2 hover:text-white"
+                >
+                  Terms and Conditions
+                </button>{" "}
+                and{" "}
+                <button
+                  type="button"
+                  onClick={() => setShowPrivacy(true)}
+                  className="text-zinc-300 underline underline-offset-2 hover:text-white"
+                >
+                  Privacy Policy
+                </button>{" "}
+                at any time.
+              </p>
             </form>
-          )}
+          </div>
+
+          {/* Little footer */}
+          <div className="mt-8 text-[11px] text-zinc-500">
+            BFFlix is a personal project for sharing what you watch with your
+            friends. Feedback is always welcome.
+          </div>
+        </div>
+
+        {/* Right: Hero / Preview */}
+        <div className="hidden md:flex w-1/2 bg-gradient-to-br from-red-900/70 via-zinc-900 to-black relative overflow-hidden">
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(248,113,113,0.28),transparent_60%),_radial-gradient(circle_at_bottom,_rgba(239,68,68,0.18),transparent_65%)]" />
+
+          <div className="relative z-10 p-8 flex flex-col justify-between h-full">
+            <div>
+              <h2 className="text-xl font-semibold text-white mb-2">
+                Turn your watch history into a story
+              </h2>
+              <p className="text-sm text-zinc-200/90 max-w-md">
+                Log movies and shows, post to your circles, and let the AI
+                assistant suggest what to watch next based on what you already
+                love.
+              </p>
+            </div>
+
+            {/* Fake preview cards */}
+            <div className="space-y-3">
+              <div className="rounded-2xl bg-black/60 border border-red-800/60 px-4 py-3 shadow-lg shadow-red-950/60">
+                <p className="text-xs uppercase tracking-[0.18em] text-red-400 mb-1">
+                  Recent viewing
+                </p>
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-medium text-white">The Matrix</p>
+                    <p className="text-xs text-zinc-400">
+                      Rated 5 stars - loved the pacing
+                    </p>
+                  </div>
+                  <div className="flex gap-0.5 text-yellow-400 text-xs">
+                    ★★★★★
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-2xl bg-black/50 border border-zinc-800/80 px-4 py-3 shadow-lg shadow-black/70">
+                <p className="text-xs uppercase tracking-[0.18em] text-zinc-400 mb-1">
+                  AI suggestion
+                </p>
+                <p className="text-sm text-zinc-100 mb-1.5">
+                  You loved smart sci fi with strong character arcs. Tonight you
+                  might enjoy {""}
+                  <span className="font-semibold text-white">
+                    Blade Runner 2049
+                  </span>
+                  .
+                </p>
+                <p className="text-[11px] text-zinc-500">
+                  Generated using your recent viewings.
+                </p>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
-      {isResetModalOpen && (
-        <div className="auth-modal-backdrop">
-          <div className="auth-modal">
-            <h3 className="auth-modal-title">Reset your password</h3>
-            <p className="auth-modal-text">
-              Enter the email associated with your account and we will send you a
-              reset link.
+      {/* Terms modal */}
+      {showTerms && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4">
+          <div className="relative max-w-lg w-full rounded-2xl bg-zinc-950 border border-zinc-800 shadow-2xl p-6">
+            <button
+              type="button"
+              onClick={() => setShowTerms(false)}
+              className="absolute right-3 top-3 rounded-full p-1.5 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/70 transition"
+              aria-label="Close terms"
+            >
+              ✕
+            </button>
+            <h3 className="text-lg font-semibold text-white mb-1">
+              TERMS &amp; CONDITIONS
+            </h3>
+            <p className="text-[11px] text-zinc-500 mb-4">
+              Last updated: November 19th 2025
             </p>
-            <div className="auth-field">
-              <label className="auth-label" htmlFor="reset-email">
-                Email
-              </label>
-              <input
-                id="reset-email"
-                type="email"
-                className="auth-input"
-                placeholder="Enter your email"
-                value={resetEmail}
-                onChange={(e) => setResetEmail(e.target.value)}
-              />
-            </div>
-            <div className="auth-modal-actions">
-              <button
-                type="button"
-                className="auth-secondary-button"
-                onClick={() => setIsResetModalOpen(false)}
-                disabled={isResetLoading}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                className="auth-primary-button"
-                onClick={() => handleRequestReset(resetEmail)}
-                disabled={isResetLoading}
-              >
-                {isResetLoading ? "Sending..." : "Send reset link"}
-              </button>
+            <div className="space-y-3 text-sm text-zinc-300 max-h-[60vh] overflow-y-auto pr-2">
+              <section>
+                <h4 className="font-semibold text-zinc-100 mb-1">1. Introduction</h4>
+                <p className="text-zinc-300">
+                  Welcome to BFFlix (&quot;we&quot;, &quot;us&quot;, or
+                  &quot;our&quot;). These Terms &amp; Conditions (&quot;Terms&quot;)
+                  govern your access to and use of our website, mobile application,
+                  and related services (collectively, the &quot;Service&quot;). By
+                  accessing or using the Service, you agree to these Terms. If you
+                  do not agree, you must not access or use the Service.
+                </p>
+              </section>
+
+              <section>
+                <h4 className="font-semibold text-zinc-100 mb-1">2. Definitions</h4>
+                <ul className="list-disc pl-5 space-y-1 text-zinc-300">
+                  <li>
+                    <strong>&quot;User,&quot; &quot;you,&quot; or &quot;your&quot;</strong> refers to any
+                    person who uses the Service.
+                  </li>
+                  <li>
+                    <strong>&quot;Content&quot;</strong> means any material (comments,
+                    ratings, reviews, images, posts) you upload, share, or publish
+                    through the Service.
+                  </li>
+                  <li>
+                    <strong>&quot;Circle&quot;</strong> means a private group within the
+                    Service that allows Users to share posts, ratings, and comments
+                    with invited members.
+                  </li>
+                  <li>
+                    <strong>&quot;Services&quot; (streaming platforms)</strong> refers
+                    to third-party streaming platforms such as Netflix, Hulu, Max,
+                    Prime Video, Disney+, and Peacock that a User selects in their
+                    profile.
+                  </li>
+                </ul>
+              </section>
+
+              <section>
+                <h4 className="font-semibold text-zinc-100 mb-1">3. License to Use</h4>
+                <p className="text-zinc-300">
+                  We grant you a limited, non-exclusive, non-transferable, revocable
+                  license to access and use the Service for personal, non-commercial
+                  purposes, in accordance with these Terms.
+                </p>
+              </section>
+
+              <section>
+                <h4 className="font-semibold text-zinc-100 mb-1">
+                  4. Accounts and Security
+                </h4>
+                <p className="text-zinc-300">
+                  To use certain features, you must create an account and provide
+                  accurate information. You are responsible for maintaining the
+                  confidentiality of your login credentials and for all activity under
+                  your account. If you suspect unauthorized access, notify us
+                  immediately at bfflix@outlook.com.
+                </p>
+              </section>
+
+              <section>
+                <h4 className="font-semibold text-zinc-100 mb-1">5. Acceptable Use</h4>
+                <p className="text-zinc-300 mb-1">
+                  You agree not to:
+                </p>
+                <ul className="list-disc pl-5 space-y-1 text-zinc-300">
+                  <li>Violate any laws or regulations.</li>
+                  <li>
+                    Infringe the rights (including intellectual property and privacy
+                    rights) of others.
+                  </li>
+                  <li>
+                    Upload or share harmful, obscene, threatening, or misleading
+                    content.
+                  </li>
+                  <li>
+                    Use the Service for commercial purposes, spam, or unauthorized
+                    advertising.
+                  </li>
+                  <li>
+                    Interfere with or attempt to gain unauthorized access to the
+                    Service, other accounts, or networks.
+                  </li>
+                  <li>
+                    Deploy bots, scrapers, or automated systems without our written
+                    permission.
+                  </li>
+                </ul>
+              </section>
+
+              <section>
+                <h4 className="font-semibold text-zinc-100 mb-1">6. User Content</h4>
+                <p className="text-zinc-300 mb-1">
+                  You retain ownership of any Content you submit. By posting Content,
+                  you grant BFFlix a worldwide, royalty-free, non-exclusive license to
+                  host, display, reproduce, distribute, and modify such Content solely
+                  for operating and improving the Service.
+                </p>
+                <p className="text-zinc-300 mb-1">
+                  You acknowledge that your posts within Circles may be visible to
+                  other members of that Circle, and that you can choose to share posts
+                  with multiple Circles at once.
+                </p>
+                <p className="text-zinc-300">
+                  We reserve the right to remove or restrict access to any Content or
+                  account that violates these Terms.
+                </p>
+              </section>
+
+              <section>
+                <h4 className="font-semibold text-zinc-100 mb-1">7. Circles</h4>
+                <p className="text-zinc-300 mb-1">
+                  Circles are private spaces where Users can:
+                </p>
+                <ul className="list-disc pl-5 space-y-1 text-zinc-300 mb-1">
+                  <li>Post ratings, comments, and recommendations.</li>
+                  <li>Invite or remove members.</li>
+                  <li>Cross-post to multiple Circles at once.</li>
+                </ul>
+                <p className="text-zinc-300 mb-1">
+                  We implement deduplication logic so that the same post shared across
+                  multiple Circles does not appear multiple times in your feed.
+                </p>
+                <p className="text-zinc-300 mb-1">
+                  You agree not to share access to Circles or redistribute any private
+                  content from a Circle without the consent of its members.
+                </p>
+                <p className="text-zinc-300">
+                  We reserve the right to suspend or remove Circles that violate these
+                  Terms or contain prohibited content.
+                </p>
+              </section>
+
+              <section>
+                <h4 className="font-semibold text-zinc-100 mb-1">
+                  8. Streaming Availability
+                </h4>
+                <p className="text-zinc-300">
+                  The Service may show what content is currently available on your
+                  selected streaming platforms in the United States. We are not
+                  affiliated with any streaming providers, and we do not guarantee the
+                  accuracy, availability, or ongoing access to any titles listed. You
+                  are responsible for confirming your own streaming subscriptions and
+                  related costs.
+                </p>
+              </section>
+
+              <section>
+                <h4 className="font-semibold text-zinc-100 mb-1">
+                  9. Payments and Subscriptions (if applicable)
+                </h4>
+                <p className="text-zinc-300">
+                  If we introduce paid or premium features, you agree to pay all
+                  applicable fees and taxes. We may suspend or terminate your access
+                  to paid features if payment fails or violates our billing terms. All
+                  fees are non-refundable unless required by law.
+                </p>
+              </section>
+
+              <section>
+                <h4 className="font-semibold text-zinc-100 mb-1">
+                  10. Intellectual Property
+                </h4>
+                <p className="text-zinc-300">
+                  Except for User-generated Content, all Service materials — including
+                  trademarks, software, databases, design, and branding — are the
+                  property of BFFlix or our licensors. You may not copy, modify,
+                  distribute, reverse-engineer, or create derivative works without our
+                  written consent.
+                </p>
+              </section>
+
+              <section>
+                <h4 className="font-semibold text-zinc-100 mb-1">11. Disclaimers</h4>
+                <p className="text-zinc-300">
+                  THE SERVICE IS PROVIDED &quot;AS IS&quot; AND &quot;AS
+                  AVAILABLE.&quot; WE MAKE NO WARRANTIES OR REPRESENTATIONS OF ANY
+                  KIND, EXPRESS OR IMPLIED, INCLUDING, WITHOUT LIMITATION, WARRANTIES
+                  OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, ACCURACY, OR
+                  NON-INFRINGEMENT. WE DO NOT WARRANT THAT THE SERVICE WILL BE
+                  UNINTERRUPTED, SECURE, OR ERROR-FREE.
+                </p>
+              </section>
+
+              <section>
+                <h4 className="font-semibold text-zinc-100 mb-1">
+                  12. Limitation of Liability
+                </h4>
+                <p className="text-zinc-300">
+                  TO THE FULLEST EXTENT PERMITTED BY LAW, BFFLIX AND ITS AFFILIATES
+                  SHALL NOT BE LIABLE FOR ANY INDIRECT, INCIDENTAL, SPECIAL, PUNITIVE,
+                  OR CONSEQUENTIAL DAMAGES (INCLUDING LOSS OF DATA OR PROFITS) ARISING
+                  FROM YOUR USE OF THE SERVICE. OUR TOTAL LIABILITY FOR ANY CLAIM
+                  RELATED TO THE SERVICE SHALL NOT EXCEED USD $100 OR THE AMOUNT YOU
+                  PAID TO USE THE SERVICE, WHICHEVER IS GREATER.
+                </p>
+              </section>
+
+              <section>
+                <h4 className="font-semibold text-zinc-100 mb-1">
+                  13. Indemnification
+                </h4>
+                <p className="text-zinc-300">
+                  You agree to defend, indemnify, and hold harmless BFFlix, its
+                  officers, directors, employees, agents, and affiliates from any
+                  claims, damages, losses, or expenses (including legal fees) arising
+                  out of your use of the Service or violation of these Terms.
+                </p>
+              </section>
+
+              <section>
+                <h4 className="font-semibold text-zinc-100 mb-1">14. Termination</h4>
+                <p className="text-zinc-300">
+                  We may suspend or terminate your account or access to any part of
+                  the Service at any time for violating these Terms or applicable
+                  laws. You may delete your account at any time. Upon termination,
+                  your right to use the Service ends, and we may delete your data
+                  consistent with our retention policy.
+                </p>
+              </section>
+
+              <section>
+                <h4 className="font-semibold text-zinc-100 mb-1">15. Modifications</h4>
+                <p className="text-zinc-300">
+                  We may update these Terms periodically. When we do, we&apos;ll post
+                  the new Terms with a revised &quot;Last Updated&quot; date. Your
+                  continued use of the Service after changes means you accept the new
+                  Terms.
+                </p>
+              </section>
+
+              <section>
+                <h4 className="font-semibold text-zinc-100 mb-1">16. Governing Law</h4>
+                <p className="text-zinc-300">
+                  These Terms are governed by the laws of the State of Florida, United
+                  States, without regard to its conflict of law principles. You agree
+                  that any dispute will be handled exclusively in the courts of
+                  Florida, and you waive any right to a jury trial.
+                </p>
+              </section>
+
+              <section>
+                <h4 className="font-semibold text-zinc-100 mb-1">17. Miscellaneous</h4>
+                <ul className="list-disc pl-5 space-y-1 text-zinc-300">
+                  <li>If any provision is found invalid, the remainder remains enforceable.</li>
+                  <li>Failure to enforce a provision is not a waiver.</li>
+                  <li>
+                    These Terms constitute the entire agreement between you and
+                    BFFlix.
+                  </li>
+                </ul>
+              </section>
+
+              <section>
+                <h4 className="font-semibold text-zinc-100 mb-1">18. Contact</h4>
+                <p className="text-zinc-300 mb-1">
+                  For questions about these Terms, please contact:
+                </p>
+                <p className="text-zinc-300">
+                  BFFlix
+                  <br />
+                  bfflix@outlook.com
+                  <br />
+                  4000 Central Florida Blvd
+                  <br />
+                  Orlando FL, 32836
+                </p>
+              </section>
+
+              <section>
+                <p className="text-xs text-zinc-400 pt-2">
+                  BY USING BFFLIX, YOU ACKNOWLEDGE THAT YOU HAVE READ, UNDERSTOOD, AND
+                  AGREE TO THESE TERMS.
+                </p>
+              </section>
             </div>
           </div>
         </div>
       )}
 
-      {isTermsModalOpen && (
-        <div className="auth-modal-backdrop">
-          <div className="auth-modal auth-modal--scroll">
-            <h3 className="auth-modal-title">Terms &amp; Conditions</h3>
-            <div className="auth-modal-body">
-              <h4>TERMS &amp; CONDITIONS</h4>
-              <p>
-                <strong>Last updated:</strong> Friday November 13th, 2025 at 3:49 PM
-              </p>
+      {/* Privacy modal */}
+      {showPrivacy && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4">
+          <div className="relative max-w-lg w-full rounded-2xl bg-zinc-950 border border-zinc-800 shadow-2xl p-6">
+            <button
+              type="button"
+              onClick={() => setShowPrivacy(false)}
+              className="absolute right-3 top-3 rounded-full p-1.5 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/70 transition"
+              aria-label="Close privacy policy"
+            >
+              ✕
+            </button>
+            <h3 className="text-lg font-semibold text-white mb-1">
+              BFFlix Privacy Policy
+            </h3>
+            <p className="text-[11px] text-zinc-500 mb-4">
+              Last updated: November 19th, 2025
+            </p>
+            <div className="space-y-3 text-sm text-zinc-300 max-h-[60vh] overflow-y-auto pr-2">
+              <section>
+                <h4 className="font-semibold text-zinc-100 mb-1">1. Introduction</h4>
+                <p className="text-zinc-300">
+                  Welcome to BFFlix ("we", "us", or "our"). We value your privacy and are committed to protecting your personal information.
+                  This Privacy Policy explains how we collect, use, disclose, and safeguard your information when you use the BFFlix web or mobile application (collectively, the "Service"). By using BFFlix, you agree to the terms of this Privacy Policy.
+                </p>
+              </section>
 
-              <h5>1. Introduction</h5>
-              <p>
-                Welcome to BFFLIX (&quot;we&quot;, &quot;us&quot;, or
-                &quot;our&quot;). These Terms &amp; Conditions
-                (&quot;Terms&quot;) govern your access to and use of our
-                website, mobile application, and related services (collectively,
-                the &quot;Service&quot;). By accessing or using the Service, you
-                agree to these Terms. If you do not agree, you must not access
-                or use the Service.
-              </p>
+              <section>
+                <h4 className="font-semibold text-zinc-100 mb-1">2. Information We Collect</h4>
+                <p className="text-zinc-300 mb-1">We collect information that helps us provide, improve, and personalize the Service.</p>
 
-              <h5>2. Definitions</h5>
-              <ul>
-                <li>
-                  &quot;User,&quot; &quot;you,&quot; or &quot;your&quot; refers
-                  to any person who uses the Service.
-                </li>
-                <li>
-                  &quot;Content&quot; means any material (comments, ratings,
-                  reviews, images, posts) you upload, share, or publish through
-                  the Service.
-                </li>
-                <li>
-                  &quot;Circle&quot; means a private group within the Service
-                  that allows Users to share posts, ratings, and comments with
-                  invited members.
-                </li>
-                <li>
-                  &quot;Services&quot; (streaming platforms) refers to
-                  third-party streaming platforms such as Netflix, Hulu, Max,
-                  Prime Video, Disney+, and Peacock that a User selects in their
-                  profile.
-                </li>
-              </ul>
+                <p className="text-zinc-300 font-medium mb-1">A. Information You Provide Directly</p>
+                <ul className="list-disc pl-5 space-y-1 text-zinc-300 mb-1">
+                  <li><strong>Account Information:</strong> Name, email address, password (hashed and encrypted), and selected streaming services.</li>
+                  <li><strong>Profile Details:</strong> Display name, profile picture (if uploaded), and service preferences.</li>
+                  <li><strong>Content:</strong> Posts, ratings, comments, or discussions you share within your Circles.</li>
+                  <li><strong>Communications:</strong> Feedback, support requests, or emails sent to us.</li>
+                </ul>
 
-              <h5>3. License to Use</h5>
-              <p>
-                We grant you a limited, non-exclusive, non-transferable,
-                revocable license to access and use the Service for personal,
-                non-commercial purposes, in accordance with these Terms.
-              </p>
+                <p className="text-zinc-300 font-medium mb-1">B. Information We Collect Automatically</p>
+                <ul className="list-disc pl-5 space-y-1 text-zinc-300 mb-1">
+                  <li><strong>Usage Data:</strong> Pages or screens you visit, actions taken, and timestamps.</li>
+                  <li><strong>Device Data:</strong> Device type, operating system, browser, IP address, and app version.</li>
+                  <li><strong>Cookies and Analytics:</strong> Analytics tools such as Google Analytics or Vercel Analytics help understand activity and preserve login state.</li>
+                </ul>
 
-              <h5>4. Accounts and Security</h5>
-              <p>
-                To use certain features, you must create an account and provide
-                accurate information. You are responsible for maintaining the
-                confidentiality of your login credentials and for all activity
-                under your account. If you suspect unauthorized access, notify
-                us immediately at bfflix@outlook.com.
-              </p>
+                <p className="text-zinc-300 font-medium mb-1">C. Information From Third Parties</p>
+                <ul className="list-disc pl-5 space-y-1 text-zinc-300">
+                  <li><strong>Streaming Availability APIs:</strong> Public availability data from TMDb or JustWatch.</li>
+                  <li><strong>AI Agent Providers:</strong> Anonymized context sent to OpenAI or Google Gemini to generate recommendations.</li>
+                  <li><strong>Authentication Providers:</strong> If signing in with Google/Apple, we receive only verified email and profile info.</li>
+                </ul>
+              </section>
 
-              <h5>5. Acceptable Use</h5>
-              <p>You agree not to:</p>
-              <ul>
-                <li>Violate any laws or regulations.</li>
-                <li>
-                  Infringe the rights (including intellectual property and
-                  privacy rights) of others.
-                </li>
-                <li>
-                  Upload or share harmful, obscene, threatening, or misleading
-                  content.
-                </li>
-                <li>
-                  Use the Service for commercial purposes, spam, or unauthorized
-                  advertising.
-                </li>
-                <li>
-                  Interfere with or attempt to gain unauthorized access to the
-                  Service, other accounts, or networks.
-                </li>
-                <li>
-                  Deploy bots, scrapers, or automated systems without our
-                  written permission.
-                </li>
-              </ul>
+              <section>
+                <h4 className="font-semibold text-zinc-100 mb-1">3. How We Use Your Information</h4>
+                <ul className="list-disc pl-5 space-y-1 text-zinc-300">
+                  <li>Provide, maintain, and improve the BFFlix Service.</li>
+                  <li>Personalize recommendations and Circle activity feeds.</li>
+                  <li>Enable AI-driven movie and show suggestions.</li>
+                  <li>Manage authentication, password resets, and account security.</li>
+                  <li>Monitor and detect fraudulent or abusive behavior.</li>
+                  <li>Communicate updates and security notices.</li>
+                  <li>Comply with legal requirements.</li>
+                </ul>
+              </section>
 
-              <h5>6. User Content</h5>
-              <p>
-                You retain ownership of any Content you submit. By posting
-                Content, you grant BFFlix a worldwide, royalty-free,
-                non-exclusive license to host, display, reproduce, distribute,
-                and modify such Content solely for operating and improving the
-                Service. You acknowledge that your posts within Circles may be
-                visible to other members of that Circle, and that you can choose
-                to share posts with multiple Circles at once. We reserve the
-                right to remove or restrict access to any Content or account
-                that violates these Terms.
-              </p>
+              <section>
+                <h4 className="font-semibold text-zinc-100 mb-1">4. AI Features and Data Handling</h4>
+                <p className="text-zinc-300 mb-1">Our AI features analyze your viewing history and metadata to provide personalized suggestions.</p>
+                <p className="text-zinc-300 mb-1">We never send personally identifiable information to AI APIs—only anonymized context.</p>
+                <p className="text-zinc-300">AI output complies with provider terms, and no chat data is stored unless explicitly saved.</p>
+              </section>
 
-              <h5>7. Circles</h5>
-              <p>
-                Circles are private spaces where Users can post ratings,
-                comments, and recommendations, invite or remove members, and
-                cross-post to multiple Circles at once. We implement
-                deduplication logic so that the same post shared across multiple
-                Circles does not appear multiple times in your feed. You agree
-                not to share access to Circles or redistribute any private
-                content from a Circle without the consent of its members. We
-                reserve the right to suspend or remove Circles that violate
-                these Terms or contain prohibited content.
-              </p>
+              <section>
+                <h4 className="font-semibold text-zinc-100 mb-1">5. Sharing of Information</h4>
+                <p className="text-zinc-300 mb-1">We do not sell your data. We share information only as needed:</p>
+                <ul className="list-disc pl-5 space-y-1 text-zinc-300">
+                  <li><strong>Hosting/Storage:</strong> MongoDB Atlas, Vercel, Render, Railway</li>
+                  <li><strong>Analytics:</strong> Google Analytics, Vercel Analytics</li>
+                  <li><strong>AI Processing:</strong> OpenAI or Google Gemini (anonymized)</li>
+                  <li><strong>Email Services:</strong> SMTP or AWS SES</li>
+                  <li><strong>Legal:</strong> Law enforcement when required by law</li>
+                </ul>
+              </section>
 
-              <h5>8. Streaming Availability</h5>
-              <p>
-                The Service may show what content is currently available on your
-                selected streaming platforms in the United States. We are not
-                affiliated with any streaming providers, and we do not guarantee
-                the accuracy, availability, or ongoing access to any titles
-                listed. You are responsible for confirming your own streaming
-                subscriptions and related costs.
-              </p>
+              <section>
+                <h4 className="font-semibold text-zinc-100 mb-1">6. Circles and Shared Content</h4>
+                <p className="text-zinc-300 mb-1">Content posted in a Circle is only visible to that Circle's members.</p>
+                <p className="text-zinc-300">Cross-posted content appears once in deduped feeds.</p>
+              </section>
 
-              <h5>9. Payments and Subscriptions (if applicable)</h5>
-              <p>
-                If we introduce paid or premium features, you agree to pay all
-                applicable fees and taxes. We may suspend or terminate your
-                access to paid features if payment fails or violates our billing
-                terms. All fees are non-refundable unless required by law.
-              </p>
+              <section>
+                <h4 className="font-semibold text-zinc-100 mb-1">7. Data Retention</h4>
+                <ul className="list-disc pl-5 space-y-1 text-zinc-300">
+                  <li>Personal data deleted within 30 days after account deletion.</li>
+                  <li>Circle posts may remain as anonymized entries (“Deleted User”).</li>
+                  <li>Logs/backups retained up to 90 days.</li>
+                </ul>
+              </section>
 
-              <h5>10. Intellectual Property</h5>
-              <p>
-                Except for User-generated Content, all Service materials,
-                including trademarks, software, databases, design, and branding,
-                are the property of BFFlix or our licensors. You may not copy,
-                modify, distribute, reverse-engineer, or create derivative works
-                without our written consent.
-              </p>
+              <section>
+                <h4 className="font-semibold text-zinc-100 mb-1">8. Security</h4>
+                <ul className="list-disc pl-5 space-y-1 text-zinc-300">
+                  <li>HTTPS encryption</li>
+                  <li>Bcrypt password hashing</li>
+                  <li>Protected environment variables</li>
+                  <li>Role-based access controls</li>
+                </ul>
+                <p className="text-zinc-300 mt-1">No system is 100% secure; you acknowledge inherent internet risks.</p>
+              </section>
 
-              <h5>11. Disclaimers</h5>
-              <p>
-                THE SERVICE IS PROVIDED &quot;AS IS&quot; AND &quot;AS
-                AVAILABLE.&quot; WE MAKE NO WARRANTIES OR REPRESENTATIONS OF ANY
-                KIND, EXPRESS OR IMPLIED, INCLUDING, WITHOUT LIMITATION,
-                WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE,
-                ACCURACY, OR NON-INFRINGEMENT. WE DO NOT WARRANT THAT THE
-                SERVICE WILL BE UNINTERRUPTED, SECURE, OR ERROR-FREE.
-              </p>
+              <section>
+                <h4 className="font-semibold text-zinc-100 mb-1">9. Your Rights</h4>
+                <ul className="list-disc pl-5 space-y-1 text-zinc-300">
+                  <li>Request access/copies of your data</li>
+                  <li>Correct or delete information</li>
+                  <li>Request account deletion (right to be forgotten)</li>
+                  <li>Withdraw AI feature consent</li>
+                  <li>Request details on third-party sharing</li>
+                </ul>
+                <p className="text-zinc-300 mt-1">Email bfflix@outlook.com with subject "Privacy Request".</p>
+              </section>
 
-              <h5>12. Limitation of Liability</h5>
-              <p>
-                TO THE FULLEST EXTENT PERMITTED BY LAW, BFFLIX AND ITS
-                AFFILIATES SHALL NOT BE LIABLE FOR ANY INDIRECT, INCIDENTAL,
-                SPECIAL, PUNITIVE, OR CONSEQUENTIAL DAMAGES (INCLUDING LOSS OF
-                DATA OR PROFITS) ARISING FROM YOUR USE OF THE SERVICE. OUR TOTAL
-                LIABILITY FOR ANY CLAIM RELATED TO THE SERVICE SHALL NOT EXCEED
-                USD $100 OR THE AMOUNT YOU PAID TO USE THE SERVICE, WHICHEVER IS
-                GREATER.
-              </p>
+              <section>
+                <h4 className="font-semibold text-zinc-100 mb-1">10. Children’s Privacy</h4>
+                <p className="text-zinc-300">Users must be 13 or older. Contact us if a minor account needs removal.</p>
+              </section>
 
-              <h5>13. Indemnification</h5>
-              <p>
-                You agree to defend, indemnify, and hold harmless BFFlix, its
-                officers, directors, employees, agents, and affiliates from any
-                claims, damages, losses, or expenses (including legal fees)
-                arising out of your use of the Service or violation of these
-                Terms.
-              </p>
+              <section>
+                <h4 className="font-semibold text-zinc-100 mb-1">11. International Data Transfers</h4>
+                <p className="text-zinc-300">Data may be processed in the United States. Using BFFlix implies consent.</p>
+              </section>
 
-              <h5>14. Termination</h5>
-              <p>
-                We may suspend or terminate your account or access to any part
-                of the Service at any time for violating these Terms or
-                applicable laws. You may delete your account at any time. Upon
-                termination, your right to use the Service ends, and we may
-                delete your data consistent with our retention policy.
-              </p>
-
-              <h5>15. Modifications</h5>
-              <p>
-                We may update these Terms periodically. When we do, we will post
-                the new Terms with a revised &quot;Last Updated&quot; date. Your
-                continued use of the Service after changes means you accept the
-                new Terms.
-              </p>
-
-              <h5>16. Governing Law</h5>
-              <p>
-                These Terms are governed by the laws of [State/Country], without
-                regard to its conflict of law principles. You agree that any
-                dispute will be handled exclusively in the courts of
-                [State/Country], and you waive any right to a jury trial.
-              </p>
-
-              <h5>17. Miscellaneous</h5>
-              <ul>
-                <li>
-                  If any provision is found invalid, the remainder remains
-                  enforceable.
-                </li>
-                <li>Failure to enforce a provision is not a waiver.</li>
-                <li>
-                  These Terms constitute the entire agreement between you and
-                  BFFlix.
-                </li>
-              </ul>
-
-              <h5>18. Contact</h5>
-              <p>
-                For questions about these Terms, please contact:
-                <br />
-                BFFLIX
-                <br />
-                bfflix@outlook.com
-              </p>
-
-              <p>
-                BY USING BFFLIX, YOU ACKNOWLEDGE THAT YOU HAVE READ, UNDERSTOOD,
-                AND AGREE TO THESE TERMS.
-              </p>
-            </div>
-            <div className="auth-modal-actions">
-              <button
-                type="button"
-                className="auth-secondary-button"
-                onClick={() => setIsTermsModalOpen(false)}
-              >
-                Close
-              </button>
+              <section>
+                <h4 className="font-semibold text-zinc-100 mb-1">12. Changes to This Policy</h4>
+                <p className="text-zinc-300">We update this policy periodically. Continued use means acceptance of changes.</p>
+              </section>
             </div>
           </div>
         </div>
       )}
 
-      {isPrivacyModalOpen && (
-        <div className="auth-modal-backdrop">
-          <div className="auth-modal auth-modal--scroll">
-            <h3 className="auth-modal-title">Privacy Policy</h3>
-            <div className="auth-modal-body">
-              <h4>BFFLIX Privacy Policy</h4>
-              <p>
-                <strong>Last updated:</strong> November 10th, 2025 at 4:53 PM
-              </p>
-
-              <h5>1. Introduction</h5>
-              <p>
-                Welcome to BFFLIX (&quot;we&quot;, &quot;us&quot;, or
-                &quot;our&quot;). We value your privacy and are committed to
-                protecting your personal information. This Privacy Policy
-                explains how we collect, use, disclose, and safeguard your
-                information when you use the BFFlix web or mobile application
-                (collectively, the &quot;Service&quot;). By using BFFlix, you
-                agree to the terms of this Privacy Policy.
-              </p>
-
-              <h5>2. Information We Collect</h5>
-              <p>
-                We collect information that helps us provide, improve, and
-                personalize the Service.
-              </p>
-
-              <h6>2.A. Information You Provide Directly</h6>
-              <ul>
-                <li>
-                  <strong>Account Information:</strong> Name, email address,
-                  password (hashed and encrypted), and selected streaming
-                  services (Netflix, Hulu, Max, Prime Video, Disney+, Peacock).
-                </li>
-                <li>
-                  <strong>Profile Details:</strong> Display name, profile
-                  picture (if uploaded), and service preferences.
-                </li>
-                <li>
-                  <strong>Content:</strong> Posts, ratings, comments, or
-                  discussions you share within your Circles.
-                </li>
-                <li>
-                  <strong>Communications:</strong> Feedback, support requests,
-                  or emails sent to us.
-                </li>
-              </ul>
-
-              <h6>2.B. Information We Collect Automatically</h6>
-              <ul>
-                <li>
-                  <strong>Usage Data:</strong> Pages or screens you visit,
-                  actions taken, and timestamps.
-                </li>
-                <li>
-                  <strong>Device Data:</strong> Device type, operating system,
-                  browser, IP address, and app version.
-                </li>
-                <li>
-                  <strong>Cookies and Analytics:</strong> We use analytics tools
-                  (such as Google Analytics or Vercel Analytics) to understand
-                  how users interact with our platform. Cookies help remember
-                  preferences and login states.
-                </li>
-              </ul>
-
-              <h6>2.C. Information From Third Parties</h6>
-              <ul>
-                <li>
-                  <strong>Streaming Availability APIs:</strong> We pull public
-                  availability data from services like TMDb or JustWatch to show
-                  what is playable on your selected platforms.
-                </li>
-                <li>
-                  <strong>AI Agent Providers:</strong> If you use our AI
-                  recommendations, we securely transmit anonymized context to AI
-                  services (for example, OpenAI or Google Gemini) to generate
-                  viewing suggestions.
-                </li>
-                <li>
-                  <strong>Authentication Providers (if applicable):</strong> If
-                  you sign in via Google, Apple, or other third-party services,
-                  we receive only your verified email and basic profile
-                  information (no passwords).
-                </li>
-              </ul>
-
-              <h5>3. How We Use Your Information</h5>
-              <p>We use your information to:</p>
-              <ul>
-                <li>Provide, maintain, and improve the BFFlix Service.</li>
-                <li>Personalize recommendations and Circle activity feeds.</li>
-                <li>Enable AI-driven movie and show suggestions.</li>
-                <li>
-                  Manage authentication, password resets, and account security.
-                </li>
-                <li>
-                  Monitor and detect fraudulent, abusive, or suspicious
-                  behavior.
-                </li>
-                <li>
-                  Communicate updates, service announcements, or security
-                  notices.
-                </li>
-                <li>
-                  Comply with legal requirements and enforce our Terms &amp;
-                  Conditions.
-                </li>
-              </ul>
-
-              <h5>4. AI Features and Data Handling</h5>
-              <p>
-                Our AI features (powered by OpenAI or Google Gemini) analyze:
-              </p>
-              <ul>
-                <li>Your previously watched titles and ratings (from your viewing log).</li>
-                <li>Publicly available metadata (title, genre, rating, etc.).</li>
-              </ul>
-              <p>
-                We never send personally identifiable information (such as your
-                email, name, or private messages) to AI APIs. Only minimal,
-                anonymized context—such as preferred genres or services—is
-                shared to generate personalized suggestions.
-              </p>
-              <p>
-                All AI-generated output is processed in compliance with the
-                respective provider terms, and we retain no conversational data
-                beyond the immediate session unless you explicitly save it.
-              </p>
-
-              <h5>5. Sharing of Information</h5>
-              <p>We do not sell your personal data. We may share information only under these limited circumstances:</p>
-              <ul>
-                <li>
-                  <strong>Hosting and Storage:</strong> MongoDB Atlas
-                  (database), Vercel / Render / Railway (API hosting).
-                </li>
-                <li>
-                  <strong>Analytics:</strong> Google Analytics, Vercel
-                  Analytics.
-                </li>
-                <li>
-                  <strong>AI Recommendations:</strong> OpenAI API or Google
-                  Gemini (anonymized content only).
-                </li>
-                <li>
-                  <strong>Email Services:</strong> SMTP or AWS SES (for
-                  password resets and notifications).
-                </li>
-                <li>
-                  <strong>Legal Requirements:</strong> Law enforcement or
-                  government entities if required by law.
-                </li>
-              </ul>
-              <p>
-                All third-party partners are contractually bound to handle your
-                data securely and only for authorized purposes.
-              </p>
-
-              <h5>6. Circles and Shared Content</h5>
-              <p>
-                When you post content inside a Circle, that content is visible
-                only to members of that Circle (or Circles, if cross-posted). If
-                you choose to post to multiple Circles, the same post may appear
-                once in shared feeds (deduplicated automatically).
-              </p>
-              <p>
-                You control what you share. We are not responsible for how other
-                users choose to share or use content once it is visible to them.
-              </p>
-
-              <h5>7. Data Retention</h5>
-              <p>
-                We retain account information for as long as your account is
-                active. If you delete your account:
-              </p>
-              <ul>
-                <li>
-                  All personally identifiable data (name, email, and password
-                  hash) will be deleted within 30 days.
-                </li>
-                <li>
-                  Circle posts and comments may remain visible to other users as
-                  anonymized content (&quot;Deleted User&quot;).
-                </li>
-                <li>
-                  Logs and backups are retained securely for up to 90 days
-                  before permanent deletion.
-                </li>
-              </ul>
-
-              <h5>8. Security</h5>
-              <p>
-                We use industry-standard safeguards to protect your information,
-                including:
-              </p>
-              <ul>
-                <li>HTTPS encryption for all traffic.</li>
-                <li>Hashed passwords using bcrypt.</li>
-                <li>
-                  Limited-access environment variables for sensitive keys.
-                </li>
-                <li>
-                  Role-based access controls for developers and admins.
-                </li>
-              </ul>
-              <p>
-                However, no system is 100% secure. By using the Service, you
-                acknowledge that transmission over the internet carries inherent
-                risks.
-              </p>
-
-              <h5>9. Your Rights</h5>
-              <p>
-                Depending on your region, you may have rights to:
-              </p>
-              <ul>
-                <li>Access or request a copy of your data.</li>
-                <li>Correct or delete inaccurate information.</li>
-                <li>
-                  Request deletion of your account (&quot;Right to be
-                  forgotten&quot;).
-                </li>
-                <li>Withdraw consent to AI recommendation features.</li>
-                <li>
-                  Request information on how we share data with third parties.
-                </li>
-              </ul>
-              <p>
-                To exercise these rights, contact us at{" "}
-                <a href="mailto:bfflix@outlook.com">bfflix@outlook.com</a> with
-                the subject line &quot;Privacy Request.&quot;
-              </p>
-
-              <h5>10. Children&apos;s Privacy</h5>
-              <p>
-                BFFlix is intended for users aged 13 and older. We do not
-                knowingly collect information from children under 13. If you
-                believe your child has created an account, please contact us
-                immediately to delete their data.
-              </p>
-
-              <h5>11. International Data Transfers</h5>
-              <p>
-                Your information may be transferred and processed outside your
-                country, including in the United States, where our servers and
-                third-party providers operate. By using the Service, you consent
-                to this transfer.
-              </p>
-
-              <h5>12. Changes to This Policy</h5>
-              <p>
-                We may update this Privacy Policy periodically. When we do, we
-                will update the &quot;Last Updated&quot; date and post the new
-                version on the Service. Your continued use of BFFlix after
-                updates indicates your acceptance of the revised policy.
-              </p>
-
-              <h5>13. Contact Us</h5>
-              <p>
-                If you have any questions, concerns, or data requests, contact
-                us at:
-                <br />
-                <strong>BFFLIX Privacy Team</strong>
-                <br />
-                <a href="mailto:bfflix@outlook.com">bfflix@outlook.com</a>
-              </p>
-            </div>
-            <div className="auth-modal-actions">
+      {/* Forgot password modal */}
+      {showForgotModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4">
+          <div className="relative max-w-md w-full rounded-2xl bg-zinc-950 border border-zinc-800 shadow-2xl p-6">
+            <button
+              type="button"
+              onClick={() => {
+                if (!isForgotSubmitting) {
+                  setShowForgotModal(false);
+                  setForgotEmail("");
+                }
+              }}
+              className="absolute right-3 top-3 rounded-full p-1.5 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/70 transition"
+              aria-label="Close forgot password"
+            >
+              ✕
+            </button>
+            <h3 className="text-lg font-semibold text-white mb-2">
+              Reset your password
+            </h3>
+            <p className="text-sm text-zinc-300 mb-4">
+              Enter the email linked to your BFFlix account and we’ll send you a
+              secure link to create a new password.
+            </p>
+            <form onSubmit={handleForgotPassword} className="space-y-3">
+              <div className="space-y-1.5">
+                <label className="block text-xs font-medium text-zinc-300">
+                  Email address
+                </label>
+                <input
+                  type="email"
+                  value={forgotEmail}
+                  onChange={(e) => setForgotEmail(e.target.value)}
+                  placeholder="you@example.com"
+                  className="w-full rounded-xl bg-zinc-950/80 border border-zinc-800 px-3 py-2.5 text-sm text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-red-600 focus:border-red-600 transition"
+                  required
+                />
+              </div>
               <button
-                type="button"
-                className="auth-secondary-button"
-                onClick={() => setIsPrivacyModalOpen(false)}
+                type="submit"
+                disabled={isForgotSubmitting}
+                className="w-full rounded-xl bg-red-600 hover:bg-red-500 text-sm font-medium text-white py-2.5 flex items-center justify-center gap-2 shadow-md shadow-red-900/60 transition disabled:opacity-60 disabled:cursor-not-allowed"
               >
-                Close
+                {isForgotSubmitting
+                  ? "Sending reset link..."
+                  : "Send reset link"}
               </button>
-            </div>
+              <p className="text-[11px] text-zinc-500">
+                If you do not see the email within a few minutes, check your
+                spam folder.
+              </p>
+            </form>
           </div>
         </div>
       )}

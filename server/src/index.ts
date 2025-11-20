@@ -22,6 +22,7 @@ import tmdbRouter from "./routes/tmdb.routes";
 import feedRouter from "./routes/feed";
 import engagementRouter from "./routes/engagement";
 import cookieParser from "cookie-parser";
+import verifyRoutes from "./routes/verify";
 
 const app = express();
 
@@ -65,6 +66,7 @@ app.use("/viewings", viewingsRouter);
 app.use("/tmdb", tmdbRouter);
 app.use("/feed", feedRouter);
 app.use("/posts", engagementRouter);
+app.use("/auth", verifyRoutes);
 
 // Global error handler
 app.use((

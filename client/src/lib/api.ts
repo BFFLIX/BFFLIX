@@ -1,4 +1,3 @@
-
 // client/src/lib/api.ts
 
 
@@ -10,9 +9,7 @@ const API_BASE =
 
 type Json = Record<string, any> | null;
 
-// New helper: read token from localStorage first, then fallback to the "token" cookie
-function getToken(): string | null {
-  // 1) Try localStorage (works even if cookies are blocked as third-party)
+function getAuthToken(): string | null {
   if (typeof window !== "undefined") {
     try {
       const stored = window.localStorage.getItem("bfflix_token");
@@ -22,7 +19,6 @@ function getToken(): string | null {
     }
   }
 
-  // 2) Fallback: try to read from the "token" cookie if present
   if (typeof document !== "undefined") {
     const match = document.cookie
       .split(";")
@@ -41,7 +37,7 @@ async function request<T = Json>(
   path: string,
   options: RequestInit = {}
 ): Promise<T> {
-  const token = getToken();
+  const token = getAuthToken();
 
   // Build headers as a plain object so we can mutate them safely
   const headers: Record<string, string> = {
@@ -101,4 +97,11 @@ export function apiPatch<T = Json>(path: string, body?: any) {
 
 export function apiDelete<T = Json>(path: string) {
   return request<T>(path, { method: "DELETE" });
+}
+
+export function apiPut<T = Json>(path: string, body?: any) {
+  return request<T>(path, {
+    method: "PUT",
+    body: body ? JSON.stringify(body) : undefined,
+  });
 }

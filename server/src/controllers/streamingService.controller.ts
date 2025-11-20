@@ -1,7 +1,18 @@
 import { Request, Response } from 'express';
+import { Types } from 'mongoose';
 import StreamingService from '../models/StreamingService';
 import UserStreamingService from '../models/UserStreamingService';
+import User, { Service } from '../models/user';
 import { AuthedRequest } from '../middleware/auth';
+
+const PROVIDER_TO_CANONICAL: Record<number, Service> = {
+  8: 'netflix',
+  15: 'hulu',
+  384: 'max',
+  9: 'prime',
+  337: 'disney',
+  387: 'peacock',
+};
 
 class StreamingServiceController {
   // GET /api/streaming-services - Get all available streaming services
@@ -128,6 +139,93 @@ class StreamingServiceController {
       res.status(500).json({
         success: false,
         message: 'Failed to remove streaming service',
+      });
+    }
+  }
+
+  // PUT /api/users/me/streaming-services - Replace the user's streaming services list
+  async setUserServices(req: AuthedRequest, res: Response) {
+    try {
+      const userId = req.user!.id;
+      const { serviceIds } = req.body || {};
+
+      if (!Array.isArray(serviceIds)) {
+        return res.status(400).json({
+          success: false,
+          message: 'serviceIds must be an array',
+        });
+      }
+
+      const uniqueIds = Array.from(
+        new Set(
+          serviceIds
+            .filter((id) => typeof id === 'string' && Types.ObjectId.isValid(id))
+            .map((id) => new Types.ObjectId(id))
+        )
+      );
+
+      if (uniqueIds.length === 0) {
+        await UserStreamingService.deleteMany({ userId });
+        await User.findByIdAndUpdate(userId, { services: [] }, { new: false });
+        return res.json({ success: true, data: [] });
+      }
+
+      const services = await StreamingService.find({ _id: { $in: uniqueIds } })
+        .lean();
+
+      const validIds = services.map((svc: any) => svc._id as Types.ObjectId);
+
+      if (validIds.length === 0) {
+        await UserStreamingService.deleteMany({ userId });
+        await User.findByIdAndUpdate(userId, { services: [] }, { new: false });
+        return res.json({ success: true, data: [] });
+      }
+
+      await UserStreamingService.deleteMany({
+        userId,
+        streamingServiceId: { $nin: validIds },
+      });
+
+      await Promise.all(
+        validIds.map((streamingServiceId) =>
+          UserStreamingService.updateOne(
+            { userId, streamingServiceId },
+            { $setOnInsert: { userId, streamingServiceId } },
+            { upsert: true }
+          )
+        )
+      );
+
+      const canonicalSet = Array.from(
+        new Set<Service>(
+          services
+            .map((svc: any) => PROVIDER_TO_CANONICAL[svc.tmdbProviderId])
+            .filter((value): value is Service => Boolean(value))
+        )
+      );
+
+      await User.findByIdAndUpdate(
+        userId,
+        { services: canonicalSet },
+        { new: false }
+      );
+
+      const sortedServices = services.sort((a: any, b: any) => {
+        const priorityDiff =
+          (b.displayPriority ?? 0) - (a.displayPriority ?? 0);
+        if (priorityDiff !== 0) return priorityDiff;
+        return String(a.name).localeCompare(String(b.name));
+      });
+
+      res.json({
+        success: true,
+        data: sortedServices,
+      });
+    } catch (error) {
+      console.error('Error setting user streaming services:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to update streaming services',
       });
     }
   }

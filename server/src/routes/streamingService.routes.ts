@@ -27,6 +27,12 @@ router.delete(
   streamingServiceController.removeUserService
 );
 
+router.put(
+  '/users/me/streaming-services',
+  requireAuth,
+  streamingServiceController.setUserServices
+);
+
 // Admin route - seed initial data
 router.post(
   '/admin/streaming-services/seed',

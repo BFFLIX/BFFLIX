@@ -2,8 +2,10 @@
 // src/pages/HomePage.tsx
 import React, { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
+
 import { apiGet, apiPost, apiDelete } from "../lib/api";
-import "../styles/HomePage.css";
+import TopBar from "../components/TopBar";
+
 
 // ----------------- Types -----------------
 
@@ -213,13 +215,6 @@ const normalizeFeedItems = (
   });
 };
 
-// RecentViewing type for recently watched
-type RecentViewing = {
-  id: string;
-  title: string;
-  rating: number;
-  posterUrl?: string;
-};
 
 // TMDB search result (simplified)
 type TmdbSearchResult = {
@@ -274,11 +269,13 @@ const HomePage: React.FC = () => {
   const [sortOrder, setSortOrder] = useState<"latest" | "smart">("latest");
 
   const [posts, setPosts] = useState<FeedPost[]>([]);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [currentUserName, setCurrentUserName] = useState<string | null>(null);
+  const [currentUserAvatarUrl, setCurrentUserAvatarUrl] = useState<string | null>(null);
   const [circles, setCircles] = useState<Circle[]>([]);
   const [aiSuggestions] = useState<AiSuggestion[]>(STATIC_AI_SUGGESTIONS);
-  const [recentViewings, setRecentViewings] = useState<RecentViewing[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -288,9 +285,6 @@ const HomePage: React.FC = () => {
   const [commentSubmitting, setCommentSubmitting] = useState<
     Record<string, boolean>
   >({});
-  const [viewingSaving, setViewingSaving] = useState<Record<string, boolean>>(
-    {}
-  );
   const [openComments, setOpenComments] = useState<Record<string, boolean>>({});
   const [comments, setComments] = useState<Record<string, FeedComment[]>>({});
   const [commentsLoading, setCommentsLoading] = useState<
@@ -351,6 +345,8 @@ const HomePage: React.FC = () => {
 
       if (feedResult.status === "fulfilled") {
         const feedData = feedResult.value;
+        const next = (feedData as FeedResponse)?.nextCursor ?? null;
+        setNextCursor(next);
         const circleMap = new Map(
           refreshedCircles.map(
             (c) => [c._id, c.name] as [string, string]
@@ -374,16 +370,35 @@ const HomePage: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-
-    // Soft-fail: recent viewings (OK if 404 in prod)
-    try {
-      const recentData = await apiGet<RecentViewing[]>("/viewings/recent");
-      setRecentViewings(recentData);
-    } catch (err) {
-      console.warn("Failed to load recent viewings (non-fatal)", err);
-      setRecentViewings([]);
-    }
   }, [activeTab, activeService, sortOrder]);
+
+  // Pagination: load more handler
+  const handleLoadMore = async () => {
+    if (!nextCursor) return;
+    try {
+      setIsLoadingMore(true);
+      const feedData = await apiGet<FeedResponse>(
+        `/feed?scope=${encodeURIComponent(activeTab)}&sort=${encodeURIComponent(sortOrder)}${
+          activeService === "All services"
+            ? ""
+            : `&service=${encodeURIComponent(activeService)}`
+        }&cursor=${encodeURIComponent(nextCursor)}`
+      );
+
+      const circleMap = new Map(circles.map((c) => [c._id, c.name] as [string, string]));
+      const moreItems = normalizeFeedItems(
+        Array.isArray(feedData?.items) ? feedData.items : [],
+        circleMap
+      );
+
+      setPosts((prev) => [...prev, ...moreItems]);
+      setNextCursor(feedData.nextCursor ?? null);
+    } catch (err) {
+      console.error("Load more feed error", err);
+    } finally {
+      setIsLoadingMore(false);
+    }
+  };
 
   useEffect(() => {
     fetchAll();
@@ -399,6 +414,10 @@ const HomePage: React.FC = () => {
         }
         if (me?.name) {
           setCurrentUserName(me.name as string);
+        }
+        if (typeof me?.avatarUrl === "string") {
+          const cleanedAvatar = me.avatarUrl.trim();
+          setCurrentUserAvatarUrl(cleanedAvatar ? cleanedAvatar : null);
         }
       } catch (err) {
         console.warn("Failed to load /me for current user id", err);
@@ -501,22 +520,24 @@ const HomePage: React.FC = () => {
     }
   };
 
-  const handleAddViewing = async (post: FeedPost) => {
-    if (!post.tmdbId) return;
-    const kind: "movie" | "tv" = post.mediaType === "tv" ? "tv" : "movie";
+  const handleDeleteComment = async (postId: string, commentId: string) => {
+    const confirmed = window.confirm("Delete this comment?");
+    if (!confirmed) return;
     try {
-      setViewingSaving((prev) => ({ ...prev, [post._id]: true }));
-      await apiPost("/viewings", {
-        type: kind,
-        tmdbId: post.tmdbId,
-        rating: post.rating || undefined,
-        comment: post.body || undefined,
-        watchedAt: post.createdAt,
-      });
+      await apiDelete(`/posts/${postId}/comments/${commentId}`);
+      setComments((prev) => ({
+        ...prev,
+        [postId]: (prev[postId] || []).filter((c) => c.id !== commentId),
+      }));
+      setPosts((prev) =>
+        prev.map((p) =>
+          p._id === postId
+            ? { ...p, commentCount: Math.max(0, (p.commentCount || 0) - 1) }
+            : p
+        )
+      );
     } catch (err) {
-      console.error("Add viewing failed", err);
-    } finally {
-      setViewingSaving((prev) => ({ ...prev, [post._id]: false }));
+      console.error("Delete comment failed", err);
     }
   };
 
@@ -712,138 +733,131 @@ const HomePage: React.FC = () => {
   // ----------------- Render -----------------
 
   return (
-    <div className="app-shell">
-      <div className="home-topbar">
-        <h1 className="home-topbar-title">Home</h1>
-        <div className="home-topbar-right">
-          <button
-            type="button"
-            className="profile-chip"
-            onClick={() => navigate("/profile")}
-          >
-            <span className="profile-chip-avatar">👤</span>
-            <span className="profile-chip-name">
-              {currentUserName || "Profile"}
-            </span>
-          </button>
-        </div>
-      </div>
+    <div className="min-h-screen bg-gradient-to-br from-[#05010f] via-[#080016] to-black text-slate-100 flex flex-col">
+      {/* Topbar */}
+      <TopBar
+        currentUserName={currentUserName}
+        currentUserAvatarUrl={currentUserAvatarUrl}
+      />
 
-      <div className="app-main-layout">
+      <div className="flex flex-1 min-h-0">
         {/* Left sidebar */}
-        <aside className="app-sidebar">
-          <nav className="app-sidebar-nav">
-            <button className="app-nav-item app-nav-item--active">
-              <span className="app-nav-icon">🏠</span>
+        <aside className="w-56 flex-shrink-0 bg-black/40 border-r border-white/5 flex flex-col gap-4 py-6 sticky top-0 h-screen">
+          <nav className="flex flex-col gap-2 px-4">
+            <button
+              className="flex items-center gap-3 px-4 py-2 rounded-xl bg-gradient-to-r from-pink-600 to-red-500 text-white font-semibold shadow-[0_12px_30px_rgba(0,0,0,0.7)]"
+              disabled
+            >
+              <span>🏠</span>
               <span>Home</span>
             </button>
             <button
-              className="app-nav-item"
+              className="flex items-center gap-3 px-4 py-2 rounded-xl hover:bg-white/5 text-slate-200"
               type="button"
               onClick={() => navigate("/circles")}
             >
-              <span className="app-nav-icon">👥</span>
+              <span>👥</span>
               <span>Circles</span>
             </button>
             <button
-              className="app-nav-item"
+              className="flex items-center gap-3 px-4 py-2 rounded-xl hover:bg-white/5 text-slate-200"
               type="button"
               onClick={() => navigate("/viewings")}
             >
-              <span className="app-nav-icon">🎬</span>
+              <span>🎬</span>
               <span>Viewings</span>
             </button>
             <button
-              className="app-nav-item"
+              className="flex items-center gap-3 px-4 py-2 rounded-xl hover:bg-white/5 text-slate-200"
               type="button"
               onClick={() => navigate("/ai")}
             >
-              <span className="app-nav-icon">✨</span>
+              <span>✨</span>
               <span>AI Assistant</span>
             </button>
           </nav>
-          <button
-            className="app-logout-button"
-            type="button"
-            onClick={handleLogout}
-          >
-            Log Out
-          </button>
+          <div className="mt-[120px] px-4">
+            <button
+              className="w-full py-2 rounded-xl bg-red-600/90 text-white font-semibold hover:bg-red-500 shadow-[0_10px_25px_rgba(0,0,0,0.8)]"
+              type="button"
+              onClick={handleLogout}
+            >
+              Log Out
+            </button>
+          </div>
         </aside>
 
         {/* Center feed */}
-        <main className="app-feed">
-          <header className="feed-header">
-            <div className="feed-top-row">
-              <div className="feed-tabs">
+        <main className="flex-1 min-w-0 px-0 md:px-8 py-8">
+          <header>
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex gap-2">
                 <button
-                  className={
+                  className={`px-4 py-2 rounded-t font-semibold border-b-2 ${
                     activeTab === "all"
-                      ? "feed-tab feed-tab--active"
-                      : "feed-tab"
-                  }
+                      ? "border-pink-500 text-pink-300 bg-pink-500/10"
+                      : "border-transparent text-slate-300 hover:bg-white/5"
+                  }`}
                   onClick={() => setActiveTab("all")}
                 >
                   All posts
                 </button>
                 <button
-                  className={
+                  className={`px-4 py-2 rounded-t font-semibold border-b-2 ${
                     activeTab === "circles"
-                      ? "feed-tab feed-tab--active"
-                      : "feed-tab"
-                  }
+                      ? "border-pink-500 text-pink-300 bg-pink-500/10"
+                      : "border-transparent text-slate-300 hover:bg-white/5"
+                  }`}
                   onClick={() => setActiveTab("circles")}
                 >
                   My circles
                 </button>
                 <button
-                  className={
+                  className={`px-4 py-2 rounded-t font-semibold border-b-2 ${
                     activeTab === "mine"
-                      ? "feed-tab feed-tab--active"
-                      : "feed-tab"
-                  }
+                      ? "border-pink-500 text-pink-300 bg-pink-500/10"
+                      : "border-transparent text-slate-300 hover:bg-white/5"
+                  }`}
                   onClick={() => setActiveTab("mine")}
                 >
                   My posts
                 </button>
               </div>
-
               <button
-                className="feed-new-post-button"
+                className="px-4 py-2 rounded-full bg-gradient-to-r from-pink-500 to-red-500 text-white font-semibold shadow-[0_10px_30px_rgba(0,0,0,0.8)] hover:brightness-110 transition"
                 type="button"
                 onClick={openCreateModal}
               >
                 + Post
               </button>
             </div>
-
-            <div className="feed-filters-row">
-              <div className="feed-services">
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2 mb-6">
+              <div className="flex flex-wrap gap-2">
                 {servicesList.map((s) => (
                   <button
                     key={s}
-                    className={
+                    className={`px-3 py-1 rounded-full text-xs font-medium border ${
                       activeService === s
-                        ? "feed-service-chip feed-service-chip--active"
-                        : "feed-service-chip"
-                    }
+                        ? "bg-pink-600/80 border-pink-400 text-white shadow-[0_8px_20px_rgba(0,0,0,0.8)]"
+                        : "bg-white/5 border-white/10 text-slate-300 hover:bg-white/10"
+                    }`}
                     onClick={() => setActiveService(s)}
                   >
                     {s}
                   </button>
                 ))}
               </div>
-
-              <div className="feed-sort">
+              <div className="flex items-center gap-2 text-xs text-slate-400">
+                <span>Sort by</span>
                 <select
-                  className="feed-sort-select"
+                  className="rounded-full border border-white/10 bg-slate-900/80 px-3 py-1.5 text-xs text-slate-100 shadow-inner shadow-black/60 focus:outline-none focus:ring-2 focus:ring-pink-500/70"
                   value={sortOrder}
                   onChange={(e) =>
                     setSortOrder(e.target.value as "latest" | "smart")
                   }
                 >
                   <option value="latest">Newest</option>
-                  <option value="smart">Top picks</option>
+                  <option value="smart">Top Picks</option>
                 </select>
               </div>
             </div>
@@ -851,28 +865,28 @@ const HomePage: React.FC = () => {
 
           {/* Create post modal */}
           {isCreateOpen && (
-            <div className="create-post-backdrop">
-              <div className="create-post-card">
-                <header className="create-post-header">
-                  <div className="create-post-type-toggle">
+            <div className="fixed inset-0 z-30 bg-black bg-opacity-40 flex items-center justify-center">
+              <div className="bg-[#070211] text-slate-100 rounded-2xl shadow-[0_24px_70px_rgba(0,0,0,0.95)] border border-white/10 w-full max-w-lg mx-2">
+                <header className="flex items-center justify-between px-6 py-4 border-b">
+                  <div className="flex gap-2">
                     <button
                       type="button"
-                      className={
+                      className={`px-3 py-1 rounded font-semibold ${
                         createType === "movie"
-                          ? "create-post-type-button create-post-type-button--active"
-                          : "create-post-type-button"
-                      }
+                          ? "bg-gradient-to-r from-pink-500 to-red-500 text-white shadow-[0_10px_30px_rgba(0,0,0,0.8)]"
+                          : "bg-white/5 hover:bg-white/10 text-slate-200"
+                      }`}
                       onClick={() => setCreateType("movie")}
                     >
                       Movie
                     </button>
                     <button
                       type="button"
-                      className={
+                      className={`px-3 py-1 rounded font-semibold ${
                         createType === "tv"
-                          ? "create-post-type-button create-post-type-button--active"
-                          : "create-post-type-button"
-                      }
+                          ? "bg-gradient-to-r from-pink-500 to-red-500 text-white shadow-[0_10px_30px_rgba(0,0,0,0.8)]"
+                          : "bg-white/5 hover:bg-white/10 text-slate-200"
+                      }`}
                       onClick={() => setCreateType("tv")}
                     >
                       Show
@@ -880,21 +894,21 @@ const HomePage: React.FC = () => {
                   </div>
                   <button
                     type="button"
-                    className="create-post-close"
+                    className="text-2xl font-bold text-slate-500 hover:text-slate-200"
                     onClick={closeCreateModal}
                   >
                     ×
                   </button>
                 </header>
-
-                <div className="create-post-body">
-                  <div className="create-post-field">
-                    <label className="create-post-label">
+                <div className="px-6 py-4 space-y-4">
+                  {/* Search */}
+                  <div>
+                    <label className="block mb-1 font-semibold">
                       Search for a {createType === "movie" ? "movie" : "show"}
                     </label>
                     <input
                       type="text"
-                      className="create-post-input"
+                      className="w-full border border-white/10 bg-white/5 rounded-lg px-3 py-2 text-sm placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-pink-500/80"
                       placeholder={
                         createType === "movie"
                           ? "Search for a movie..."
@@ -907,17 +921,17 @@ const HomePage: React.FC = () => {
                       }}
                     />
                     {isSearching && (
-                      <div className="create-post-search-status">
+                      <div className="text-xs text-gray-500 mt-1">
                         Searching TMDB...
                       </div>
                     )}
                     {searchResults.length > 0 && (
-                      <ul className="create-post-search-results">
+                      <ul className="mt-1 bg-white shadow rounded border z-10 absolute w-[calc(100%-3rem)] max-w-lg">
                         {searchResults.map((r) => (
                           <li key={r.id}>
                             <button
                               type="button"
-                              className="create-post-search-result"
+                              className="block w-full text-left px-4 py-2 hover:bg-blue-50"
                               onClick={() => handleSelectTitle(r)}
                             >
                               {r.label}
@@ -927,25 +941,25 @@ const HomePage: React.FC = () => {
                       </ul>
                     )}
                     {selectedTitle && (
-                      <div className="create-post-selected">
+                      <div className="mt-1 text-green-700 text-sm font-medium">
                         Selected: {selectedTitle.label}
                       </div>
                     )}
                   </div>
-
-                  <div className="create-post-field">
-                    <div className="create-post-rating-row">
-                      <span className="create-post-label">Rating:</span>
-                      <div className="create-post-stars">
+                  {/* Rating */}
+                  <div>
+                    <div className="flex items-center gap-3">
+                      <span className="font-semibold">Rating:</span>
+                      <div>
                         {Array.from({ length: 5 }).map((_, i) => (
                           <button
                             key={i}
                             type="button"
-                            className={
+                            className={`text-xl ${
                               i < rating
-                                ? "feed-star feed-star--filled"
-                                : "feed-star"
-                            }
+                                ? "text-yellow-400"
+                                : "text-gray-300 hover:text-yellow-300"
+                            }`}
                             onClick={() => setRating(i + 1)}
                           >
                             ★
@@ -954,113 +968,108 @@ const HomePage: React.FC = () => {
                       </div>
                     </div>
                   </div>
-
+                  {/* TV season/ep */}
                   {createType === "tv" && (
-                    <div className="create-post-row">
-                      <div className="create-post-field create-post-field-half">
-                        <label className="create-post-label">
+                    <div className="flex gap-4">
+                      <div className="flex-1">
+                        <label className="block mb-1 font-semibold">
                           Season (optional)
                         </label>
                         <input
                           type="number"
                           min={1}
-                          className="create-post-input"
+                          className="w-full border border-white/10 bg-white/5 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-pink-500/80"
                           value={seasonNumber}
                           onChange={(e) => setSeasonNumber(e.target.value)}
                         />
                       </div>
-                      <div className="create-post-field create-post-field-half">
-                        <label className="create-post-label">
+                      <div className="flex-1">
+                        <label className="block mb-1 font-semibold">
                           Episode (optional)
                         </label>
                         <input
                           type="number"
                           min={1}
-                          className="create-post-input"
+                          className="w-full border border-white/10 bg-white/5 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-pink-500/80"
                           value={episodeNumber}
                           onChange={(e) => setEpisodeNumber(e.target.value)}
                         />
                       </div>
                     </div>
                   )}
-
-                  <div className="create-post-field">
-                    <label className="create-post-label">
+                  {/* Comment */}
+                  <div>
+                    <label className="block mb-1 font-semibold">
                       Share your thoughts (optional)
                     </label>
                     <textarea
-                      className="create-post-textarea"
+                      className="w-full border border-white/10 bg-white/5 rounded-lg px-3 py-2 text-sm placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-pink-500/80"
                       maxLength={1000}
                       placeholder="What did you think?"
                       value={comment}
                       onChange={(e) => setComment(e.target.value)}
                     />
-                    <div className="create-post-char-counter">
+                    <div className="text-xs text-gray-400 text-right">
                       {comment.length}/1000
                     </div>
                   </div>
-
-                  <div className="create-post-field">
-                    <div className="create-post-watched-row">
-                      <span className="create-post-label">Watched on:</span>
+                  {/* Watched at */}
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-semibold">Watched on:</span>
                       <input
                         type="date"
-                        className="create-post-input"
+                        className="border border-white/10 bg-white/5 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-pink-500/80"
                         value={watchedAt}
                         onChange={(e) => setWatchedAt(e.target.value)}
                       />
                     </div>
                   </div>
-
-                  <div className="create-post-field">
-                    <div className="create-post-circles-row">
-                      <span className="create-post-label">
-                        Post to circles:
-                      </span>
-                      <div className="create-post-circles">
-                        {circles.map((circle) => (
-                          <button
-                            key={circle._id}
-                            type="button"
-                            className={
-                              selectedCircleIds.includes(circle._id)
-                                ? "create-post-circle create-post-circle--active"
-                                : "create-post-circle"
-                            }
-                            onClick={() => toggleCircleSelection(circle._id)}
-                          >
-                            {circle.name}
-                          </button>
-                        ))}
+                  {/* Circles */}
+                  <div>
+                    <div className="font-semibold mb-1">Post to circles:</div>
+                    <div className="flex flex-wrap gap-2">
+                      {circles.map((circle) => (
                         <button
+                          key={circle._id}
                           type="button"
-                          className="create-post-circle create-post-circle--add"
-                          onClick={() => {
-                            closeCreateModal();
-                            navigate("/circles");
-                          }}
+                          className={`px-3 py-1 rounded-full border text-sm font-medium ${
+                            selectedCircleIds.includes(circle._id)
+                              ? "bg-pink-600/80 border-pink-400 text-white shadow-[0_8px_20px_rgba(0,0,0,0.8)]"
+                              : "bg-white/5 border-white/10 text-slate-200 hover:bg-white/10"
+                          }`}
+                          onClick={() => toggleCircleSelection(circle._id)}
                         >
-                          +
+                          {circle.name}
                         </button>
-                      </div>
-                      {circles.length === 0 && (
-                        <p className="create-post-circles-empty">
-                          You are not in any circles yet. Tap + to create or
-                          join one.
-                        </p>
-                      )}
+                      ))}
+                      <button
+                        type="button"
+                        className="px-3 py-1 rounded-full border border-dashed border-white/30 text-slate-300 hover:bg-white/10"
+                        onClick={() => {
+                          closeCreateModal();
+                          navigate("/circles");
+                        }}
+                      >
+                        +
+                      </button>
                     </div>
+                    {circles.length === 0 && (
+                      <p className="text-sm text-gray-400 mt-2">
+                        You are not in any circles yet. Tap + to create or join one.
+                      </p>
+                    )}
                   </div>
-
                   {postError && (
-                    <div className="create-post-error">{postError}</div>
+                    <div className="text-red-600 bg-red-50 px-3 py-2 rounded text-sm font-medium">
+                      {postError}
+                    </div>
                   )}
                 </div>
-
-                <footer className="create-post-footer">
+                <footer className="flex justify-end gap-2 px-6 py-4 border-t">
                   <button
                     type="button"
-                    className="create-post-cancel"
+                    className="px-4 py-2 rounded-full bg-white/5 hover:bg-white/10 text-slate-200"
                     onClick={closeCreateModal}
                     disabled={isSubmittingPost}
                   >
@@ -1068,7 +1077,7 @@ const HomePage: React.FC = () => {
                   </button>
                   <button
                     type="button"
-                    className="create-post-submit"
+                    className="px-4 py-2 rounded-full bg-gradient-to-r from-pink-500 to-red-500 text-white font-semibold shadow-[0_10px_30px_rgba(0,0,0,0.9)] hover:brightness-110"
                     onClick={handleSubmitPost}
                     disabled={isSubmittingPost}
                   >
@@ -1079,254 +1088,265 @@ const HomePage: React.FC = () => {
             </div>
           )}
 
-          <section className="feed-list">
+          <section>
             {isLoading && (
-              <div className="feed-loading">Loading your feed...</div>
+              <div className="text-center text-gray-500 py-8">Loading your feed...</div>
             )}
-
             {error && !isLoading && (
-              <div className="feed-error">{error}</div>
+              <div className="text-center text-red-600 py-8">{error}</div>
             )}
-
             {!isLoading && !error && posts.length === 0 && (
-              <div className="feed-empty">
-                Make your first post or join your first circle to start your
-                BFFlix feed.
+              <div className="text-center text-gray-400 py-8">
+                Make your first post or join your first circle to start your BFFlix feed.
               </div>
             )}
-
             {!isLoading &&
               !error &&
               posts.map((post) => (
-                <article key={post._id} className="feed-card">
-                  <header className="feed-card-header">
-                    <div className="feed-card-author">
-                      <div className="feed-card-avatar">
+                <article
+                  key={post._id}
+                  className="bg-[#070211]/90 rounded-2xl border border-white/8 shadow-[0_24px_60px_rgba(0,0,0,0.95)] mb-6 overflow-hidden"
+                >
+                  <header className="flex items-center justify-between px-6 py-4 border-b">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center text-lg font-bold text-pink-300 overflow-hidden">
                         {post.authorAvatarUrl ? (
                           <img
                             src={post.authorAvatarUrl}
                             alt={post.authorName}
+                            className="w-full h-full object-cover"
                           />
                         ) : (
                           <span>
-                            {post.authorName?.charAt(0).toUpperCase() || 'Unknown'}
+                            {post.authorName?.charAt(0).toUpperCase() || 'U'}
                           </span>
                         )}
                       </div>
-                      <div className="feed-card-author-meta">
-                        <div className="feed-card-author-name">
-                          {post.authorName}
-                        </div>
-                        <div className="feed-card-subtitle">
+                      <div>
+                        <div className="font-semibold">{post.authorName}</div>
+                        <div className="text-xs text-gray-500">
                           Posted in: {post.circleNames.join(", ")}
                         </div>
                       </div>
                     </div>
-                    <div className="feed-card-timestamp">
+                    <div className="text-xs text-slate-500">
                       {formatTimeAgo(post.createdAt)}
                     </div>
                   </header>
-
-                  <div className="feed-card-body">
+                  <div className="flex flex-col md:flex-row px-6 py-4 gap-6">
                     {post.imageUrl && (
-                      <div className="feed-card-poster">
-                        <img src={post.imageUrl} alt={post.title} />
+                      <div className="md:w-32 md:flex-shrink-0 mb-4 md:mb-0">
+                        <img
+                          src={post.imageUrl}
+                          alt={post.title}
+                          className="w-24 h-36 object-cover rounded shadow"
+                        />
                       </div>
                     )}
-
-                    <div className="feed-card-main">
-                      <div className="feed-card-title-row">
-                        <h2 className="feed-card-title">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <h2 className="font-bold text-lg truncate">
                           {post.title}
                           {post.year ? ` (${post.year})` : ""}
                         </h2>
-                        <span className="feed-card-type-pill">
+                        <span className="ml-2 px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-100 text-blue-700">
                           {post.type === "Movie" ? "Movie" : "Show"}
                         </span>
                       </div>
-
-                      <div className="feed-card-rating-row">
+                      <div className="flex items-center mb-2">
                         <div
-                          className="feed-card-stars"
+                          className="flex"
                           aria-label={`Rating ${post.rating} out of 5`}
                         >
-                          {Array.from({ length: 5 }).map((_, i) => (
-                            <span
-                              key={i}
-                              className={
-                                i < post.rating
-                                  ? "feed-star feed-star--filled"
-                                  : "feed-star"
-                              }
-                            >
-                              ★
-                            </span>
-                          ))}
+                        {Array.from({ length: 5 }).map((_, i) => (
+                          <span
+                            key={i}
+                            className={`text-xl ${
+                              i < post.rating
+                                ? "text-yellow-400"
+                                : "text-slate-700"
+                            }`}
+                          >
+                            ★
+                          </span>
+                        ))}
                         </div>
                       </div>
-
-                      <p className="feed-card-text">{post.body}</p>
-
-                      <div className="feed-card-services">
+                      <p className="mb-2">{post.body}</p>
+                      <div className="flex flex-wrap gap-2">
                         {post.services.map((service) => (
-                          <span key={service} className="feed-service-pill">
+                          <span
+                            key={service}
+                            className="px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600 border border-gray-200"
+                          >
                             {service}
                           </span>
                         ))}
                       </div>
                     </div>
                   </div>
-
-                  <footer className="feed-card-footer">
+                  <footer className="flex items-center gap-2 px-6 py-3 border-t">
                     <button
-                      className="feed-footer-action"
+                      className="flex items-center gap-1 text-lg px-2 py-1 rounded hover:bg-white/5"
                       type="button"
-                      onClick={() =>
-                        handleToggleLike(post._id, post.likedByMe)
-                      }
+                      onClick={() => handleToggleLike(post._id, post.likedByMe)}
                     >
                       <span>{post.likedByMe ? "❤️" : "🤍"}</span>
-                      <span>{post.likeCount}</span>
+                      <span className="text-base">{post.likeCount}</span>
                     </button>
                     <button
-                      className="feed-footer-action"
+                      className="flex items-center gap-1 text-lg px-2 py-1 rounded hover:bg-white/5"
                       type="button"
                       onClick={() => handleToggleComments(post._id)}
                     >
                       <span>💬</span>
-                      <span>{post.commentCount}</span>
-                    </button>
-                    <button
-                      className="feed-footer-action"
-                      type="button"
-                      onClick={() => handleAddViewing(post)}
-                      disabled={!post.tmdbId || viewingSaving[post._id]}
-                    >
-                      <span>🎬</span>
-                      <span>
-                        {viewingSaving[post._id]
-                          ? "Saving..."
-                          : "Add to viewings"}
-                      </span>
-                    </button>
-                    <button className="feed-footer-action feed-footer-action--right">
-                      🔖
+                      <span className="text-base">{post.commentCount}</span>
                     </button>
                     {post.authorId &&
                       currentUserId &&
                       post.authorId === currentUserId && (
                         <button
-                          className="feed-footer-action feed-footer-action--right"
+                          className="ml-auto flex items-center gap-1 px-3 py-1 rounded hover:bg-red-500/20 text-sm text-red-300"
                           type="button"
                           onClick={() => handleDeletePost(post._id)}
                         >
-                          🗑
+                          Delete
                         </button>
                       )}
                   </footer>
-
                   {openComments[post._id] && (
-                    <div className="feed-comment-box">
-                      <div className="feed-comment-list">
-                        {commentsLoading[post._id] && (
-                          <div className="feed-comment-loading">
-                            Loading comments...
-                          </div>
-                        )}
-                        {(comments[post._id] || []).map((c) => (
-                          <div key={c.id} className="feed-comment-item">
-                            <div className="feed-comment-meta">
-                              <span className="feed-comment-author">
-                                {currentUserId && c.userId === currentUserId
-                                  ? "You"
-                                  : c.userId}
-                              </span>
-                              <span className="feed-comment-time">
-                                {new Date(c.createdAt).toLocaleString()}
-                              </span>
-                            </div>
-                            <div className="feed-comment-text">{c.text}</div>
-                          </div>
-                        ))}
-                        {!commentsLoading[post._id] &&
-                          (!comments[post._id] ||
-                            comments[post._id].length === 0) && (
-                            <div className="feed-comment-empty">
-                              No comments yet. Be the first!
-                            </div>
+                    <div className="px-6 pb-4">
+                      <div className="bg-white/5 rounded p-4 mt-2">
+                        <div className="mb-2">
+                          {commentsLoading[post._id] && (
+                            <div className="text-slate-400">Loading comments...</div>
                           )}
+                          {(comments[post._id] || []).map((c) => (
+                            <div key={c.id} className="mb-2">
+                              <div className="flex items-center justify-between gap-2 text-xs text-slate-300 mb-1">
+                                <div className="flex items-center gap-2">
+                                  <span className="font-bold">
+                                    {currentUserId && c.userId === currentUserId ? "You" : c.userId}
+                                  </span>
+                                  <span>{new Date(c.createdAt).toLocaleString()}</span>
+                                </div>
+                                {currentUserId && c.userId === currentUserId && (
+                                  <button
+                                    type="button"
+                                    className="text-[11px] text-red-300 hover:text-red-100 px-2 py-0.5 rounded-full hover:bg-red-500/10"
+                                    onClick={() => handleDeleteComment(post._id, c.id)}
+                                  >
+                                    Delete
+                                  </button>
+                                )}
+                              </div>
+                              <div className="ml-2">{c.text}</div>
+                            </div>
+                          ))}
+                          {!commentsLoading[post._id] &&
+                            (!comments[post._id] || comments[post._id].length === 0) && (
+                              <div className="text-slate-400 text-sm">
+                                No comments yet. Be the first!
+                              </div>
+                            )}
+                        </div>
+                        <textarea
+                          className="w-full border border-white/10 bg-white/5 rounded-lg px-3 py-2 text-sm placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-pink-500/80"
+                          placeholder="Add a comment..."
+                          value={commentDrafts[post._id] || ""}
+                          onChange={(e) =>
+                            setCommentDrafts((prev) => ({
+                              ...prev,
+                              [post._id]: e.target.value,
+                            }))
+                          }
+                          rows={2}
+                        />
+                        <div className="mt-2 flex justify-end gap-2">
+                          <button
+                            type="button"
+                            className="px-4 py-1 rounded-full bg-white/5 text-slate-200 text-sm hover:bg-white/10"
+                            onClick={() => {
+                              setOpenComments((prev) => ({ ...prev, [post._id]: false }));
+                              setCommentDrafts((prev) => ({ ...prev, [post._id]: "" }));
+                            }}
+                            disabled={commentSubmitting[post._id]}
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            className="px-4 py-1 rounded-full bg-gradient-to-r from-pink-500 to-red-500 text-white text-sm font-semibold hover:brightness-110 shadow-[0_10px_30px_rgba(0,0,0,0.9)]"
+                            onClick={() => handleAddComment(post._id)}
+                            disabled={commentSubmitting[post._id]}
+                          >
+                            {commentSubmitting[post._id] ? "Posting..." : "Post comment"}
+                          </button>
+                        </div>
                       </div>
-                      <textarea
-                        className="feed-comment-input"
-                        placeholder="Add a comment..."
-                        value={commentDrafts[post._id] || ""}
-                        onChange={(e) =>
-                          setCommentDrafts((prev) => ({
-                            ...prev,
-                            [post._id]: e.target.value,
-                          }))
-                        }
-                        rows={2}
-                      />
-                      <button
-                        type="button"
-                        className="feed-comment-submit"
-                        onClick={() => handleAddComment(post._id)}
-                        disabled={commentSubmitting[post._id]}
-                      >
-                        {commentSubmitting[post._id]
-                          ? "Posting..."
-                          : "Post comment"}
-                      </button>
                     </div>
                   )}
                 </article>
               ))}
           </section>
+          {/* Pagination: Load more */}
+          {nextCursor && posts.length > 0 && !isLoading && !error && (
+            <div className="flex justify-center py-4">
+              <button
+                type="button"
+                className="px-4 py-2 rounded-full bg-white/5 hover:bg-white/10 text-slate-200 text-sm font-medium border border-white/10"
+                onClick={handleLoadMore}
+                disabled={isLoadingMore}
+              >
+                {isLoadingMore ? "Loading more..." : "Load more"}
+              </button>
+            </div>
+          )}
         </main>
 
         {/* Right rail */}
-        <aside className="app-right-rail">
-          <section className="rail-card">
-            <header className="rail-card-header">
-              <h2 className="rail-card-title">Your Circles</h2>
+        <aside className="w-80 flex-shrink-0 px-4 py-8 hidden lg:block text-slate-100 sticky top-0 h-screen">
+          <section className="bg-[#070211]/90 rounded-2xl border border-white/10 shadow-[0_18px_50px_rgba(0,0,0,0.9)] mb-6 p-4">
+            <header className="mb-2">
+              <h2 className="font-bold text-lg text-center">Your Circles</h2>
             </header>
-            <div className="rail-circles-list">
-              {circles.map((circle) => (
-                <button key={circle._id} className="rail-circle-item">
-                  <div className="rail-circle-name">{circle.name}</div>
-                  <div className="rail-circle-meta">
-                    {circle.memberCount} members
-                  </div>
+            <div className="flex flex-col gap-2 mb-2">
+              {circles.slice(0, 4).map((circle) => (
+                <button
+                  key={circle._id}
+                  type="button"
+                  className="w-full px-3 py-3 rounded-2xl bg-white/5 hover:bg-white/10 border border-pink-500/30 shadow-[0_10px_30px_rgba(0,0,0,0.7)] transition flex flex-col items-center justify-center gap-1 text-slate-100 text-center"
+                  onClick={() => navigate(`/circles/${circle._id}`)}
+                >
+                  <div className="font-semibold">{circle.name}</div>
+                  <div className="text-xs text-gray-400">{circle.memberCount} members</div>
                 </button>
               ))}
             </div>
             <button
               type="button"
-              className="rail-view-all"
+              className="mt-2 px-3 py-1 rounded-full bg-pink-600/90 text-white hover:bg-pink-500 text-sm font-semibold shadow-[0_10px_25px_rgba(0,0,0,0.9)] mx-auto block"
               onClick={() => navigate("/circles")}
             >
               View all circles
             </button>
           </section>
-
-          <section className="rail-card rail-card-ai">
-            <header className="rail-card-header">
-              <h2 className="rail-card-title">
-                <span className="rail-ai-icon">AI</span>
+          <section className="bg-[#070211]/90 rounded-2xl border border-white/10 shadow-[0_18px_50px_rgba(0,0,0,0.9)] mb-6 p-4">
+            <header className="mb-3">
+              <h2 className="font-bold text-lg flex items-center justify-center gap-2 text-center">
+                <span className="bg-gradient-to-r from-pink-500 to-red-500 text-white rounded px-2 py-0.5 text-xs">AI</span>
                 AI Recommendations
               </h2>
             </header>
-            <p className="rail-ai-text">
-              Ask the BFFlix AI for movie and TV recommendations tailored to
-              your taste.
+            <p className="text-sm text-gray-500 mb-2">
+              Ask the BFFlix AI for movie and TV recommendations tailored to your taste.
             </p>
-            <div className="rail-ai-chip-list">
+            <div className="flex flex-wrap gap-2 mb-2">
               {aiSuggestions.map((s) => (
                 <button
                   key={s.id}
                   type="button"
-                  className="rail-ai-chip"
+                  className="px-3 py-1 rounded-full bg-white/5 text-slate-100 text-xs font-medium hover:bg-white/10"
                   onClick={() =>
                     navigate("/ai", { state: { initialPrompt: s.text } })
                   }
@@ -1336,61 +1356,14 @@ const HomePage: React.FC = () => {
               ))}
             </div>
             <button
-              className="rail-ai-button"
+              className="px-3 py-1 rounded-full bg-gradient-to-r from-pink-500 to-red-500 text-white text-sm font-semibold hover:brightness-110 shadow-[0_10px_30px_rgba(0,0,0,0.9)] mx-auto block"
               type="button"
               onClick={() => navigate("/ai")}
             >
               Open AI Assistant
             </button>
           </section>
-
-          <section className="rail-card">
-            <header className="rail-card-header">
-              <h2 className="rail-card-title">Recently watched</h2>
-            </header>
-            {recentViewings.length === 0 ? (
-              <p className="rail-empty-text">
-                Start logging what you watch to see it here.
-              </p>
-            ) : (
-              <ul className="rail-recent-viewings-list">
-                {recentViewings.map((v) => (
-                  <li key={v.id} className="rail-recent-viewing-item">
-                    {v.posterUrl && (
-                      <div className="rail-recent-poster">
-                        <img src={v.posterUrl} alt={v.title} />
-                      </div>
-                    )}
-                    <div className="rail-recent-content">
-                      <div className="rail-recent-title">{v.title}</div>
-                      <div className="rail-recent-rating">
-                        {Array.from({ length: 5 }).map((_, i) => (
-                          <span
-                            key={i}
-                            className={
-                              i < v.rating
-                                ? "feed-star feed-star--filled"
-                                : "feed-star"
-                            }
-                          >
-                            ★
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
-
-          <button
-            className="rail-floating-ai-button"
-            type="button"
-            onClick={() => navigate("/ai")}
-          >
-            <span className="rail-floating-ai-label">AI</span>
-          </button>
+          
         </aside>
       </div>
     </div>

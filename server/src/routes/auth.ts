@@ -1,3 +1,4 @@
+
 // server/src/routes/auth.ts
 import { Router } from "express";
 import type { CookieOptions } from "express";
@@ -7,8 +8,10 @@ import User from "../models/user";
 import PasswordReset from "../models/PasswordReset";
 import { signToken } from "../lib/jwt";
 import { generateToken, hashToken } from "../lib/resetToken";
-import { sendWelcomeEmail, sendPasswordResetEmail } from "../lib/mailer";
+import { sendPasswordResetEmail, sendVerificationEmail } from "../lib/mailer";
 import { validatePassword } from "../lib/password";
+import crypto from "crypto";
+import EmailVerification from "../models/EmailVerification";
 
 const r = Router();
 
@@ -27,6 +30,8 @@ const tokenCookieOptions: CookieOptions = {
 };
 
 // ---------- Schemas ----------
+const USERNAME_REGEX = /^[a-z0-9._-]+$/i;
+
 const signupSchema = z.object({
   email: z.string().email().transform(normEmail),
   password: z
@@ -35,6 +40,14 @@ const signupSchema = z.object({
     .regex(/[A-Z]/, "Must include an uppercase letter")
     .regex(/[0-9]/, "Must include a number"),
   name: z.string().trim().min(1).max(50),
+  username: z
+    .string()
+    .trim()
+    .min(3, "Username must be at least 3 characters")
+    .max(30, "Username must be at most 30 characters")
+    .regex(USERNAME_REGEX, "Only letters, numbers, dots, dashes, and underscores are allowed")
+    .transform((val) => val.toLowerCase())
+    .optional(),
 });
 
 const loginSchema = z.object({
@@ -55,6 +68,12 @@ const resetSchema = z.object({
     .regex(/[0-9]/, "Must include a number"),
 });
 
+const requestVerificationSchema = z.object({
+  userId: z.string().min(1),
+  email: z.string().email().transform(normEmail),
+  name: z.string().trim().min(1),
+});
+
 // ---------- Signup ----------
 r.post("/signup", async (req, res) => {
   const parsed = signupSchema.safeParse(req.body);
@@ -65,7 +84,7 @@ r.post("/signup", async (req, res) => {
     });
   }
 
-  const { email, password, name } = parsed.data;
+  const { email, password, name, username } = parsed.data;
 
   // Enforce strong password (policy + zxcvbn)
   {
@@ -84,22 +103,60 @@ r.post("/signup", async (req, res) => {
     if (existing) return res.status(409).json({ error: "email_already_in_use" });
 
     const passwordHash = await bcrypt.hash(password, 10);
-    const user = await User.create({ email, name: name.trim(), passwordHash });
+    const user = await User.create({
+      email,
+      name: name.trim(),
+      passwordHash,
+      ...(username ? { username } : {}),
+    });
 
-    const token = signToken(String(user._id), (user as any).tokenVersion ?? 0);
+    const authToken = signToken(String(user._id), (user as any).tokenVersion ?? 0);
 
-    // Fire-and-forget welcome email (does not block signup)
-    sendWelcomeEmail(user.email, user.name).catch((e) =>
-      console.error("Welcome email failed:", e)
-    );
+    // Fire-and-forget: create verification token + 6 digit code and send welcome + verification email.
+    (async () => {
+      try {
+        // Clean up any previous unused verifications for this user
+        await EmailVerification.deleteMany({
+          userId: user._id,
+          usedAt: null,
+        });
+
+        // Token for magic link
+        const verifyToken = crypto.randomBytes(32).toString("hex");
+        const tokenHash = crypto.createHash("sha256").update(verifyToken).digest("hex");
+
+        // 6 digit numeric code as a string
+        const code = Math.floor(100000 + Math.random() * 900000).toString();
+        const codeHash = crypto.createHash("sha256").update(code).digest("hex");
+
+        await EmailVerification.create({
+          userId: user._id,
+          tokenHash,
+          codeHash,
+          expiresAt: new Date(Date.now() + 60 * 60 * 1000), // 1 hour
+        });
+
+        // Always point users to the main production host
+        const verifyUrl = `https://bfflix.com/verify/${verifyToken}`;
+
+        await sendVerificationEmail(user.email, verifyUrl, code, user.name);
+      } catch (e) {
+        console.error("Signup verification email failed:", e);
+      }
+    })();
 
     return res
-      .cookie("token", token, tokenCookieOptions)
+      .cookie("token", authToken, tokenCookieOptions)
       .status(201)
-      .json({ token, user: { id: user._id, email: user.email, name: user.name } });
+      .json({ token: authToken, user: { id: user._id, email: user.email, name: user.name } });
   } catch (err: any) {
     if (err?.code === 11000) {
-      return res.status(409).json({ error: "email_already_in_use" });
+      if (err?.keyPattern?.email) {
+        return res.status(409).json({ error: "email_already_in_use" });
+      }
+      if (err?.keyPattern?.username) {
+        return res.status(409).json({ error: "username_already_in_use" });
+      }
     }
     console.error("Signup error:", err);
     return res.status(500).json({ error: "internal_error" });
@@ -168,7 +225,7 @@ r.post("/login", async (req, res) => {
       .cookie("token", token, tokenCookieOptions)
       .json({
         token,
-        user: { id: user._id, email: user.email, name: user.name },
+        user: { id: user._id, email: user.email, name: user.name, username: (user as any).username },
       });
   } catch (err) {
     console.error("Login error:", err);
@@ -265,6 +322,57 @@ r.post("/reset", async (req, res) => {
   } catch (err) {
     console.error("Reset error:", err);
     return res.status(500).json({ error: "internal_error" });
+  }
+});
+
+// ---------- Request email verification (token + 6 digit code) ----------
+r.post("/request-verification", async (req, res) => {
+  const parsed = requestVerificationSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({
+      error: "validation_error",
+      details: parsed.error.flatten().fieldErrors,
+    });
+  }
+
+  try {
+    const { userId, email, name } = parsed.data;
+
+    // Clean up any previous unused verifications for this user
+    await EmailVerification.deleteMany({
+      userId,
+      usedAt: null,
+    });
+
+    // Token for magic link
+    const token = crypto.randomBytes(32).toString("hex");
+    const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
+
+    // 6 digit numeric code as a string
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    const codeHash = crypto.createHash("sha256").update(code).digest("hex");
+
+    await EmailVerification.create({
+      userId,
+      tokenHash,
+      codeHash,
+      expiresAt: new Date(Date.now() + 60 * 60 * 1000), // 1 hour
+    });
+
+    // Always point users to the main production host
+    const verifyUrl = `https://bfflix.com/verify/${token}`;
+
+    try {
+      // Update sendVerificationEmail signature to accept (email, verifyUrl, code, name)
+      await sendVerificationEmail(email, verifyUrl, code, name);
+    } catch (e) {
+      console.error("Verification email failed:", e);
+    }
+
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error("Request verification error:", err);
+    return res.status(500).json({ error: "could_not_send" });
   }
 });
 

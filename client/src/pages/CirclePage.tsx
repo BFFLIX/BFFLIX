@@ -1,10 +1,10 @@
 
-// client/src/styles/CirclesPage.tsx
+//client/src/pages/CirclePage.tsx
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { apiGet, apiPost } from "../lib/api";
-import bfflixLogo from "../assets/bfflix-logo.svg";
-import "../styles/CirclesPage.css";
+import LeftSidebar from "../components/LeftSidebar";
+import TopBar from "../components/TopBar";
 
 type CircleVisibility = "private" | "public";
 
@@ -46,7 +46,9 @@ const CirclesPage: React.FC = () => {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newName, setNewName] = useState("");
   const [newDescription, setNewDescription] = useState("");
-  const [newVisibility, setNewVisibility] = useState<"private" | "public">("private");
+  const [newVisibility, setNewVisibility] = useState<"private" | "public">(
+    "private"
+  );
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
 
@@ -214,30 +216,6 @@ const CirclesPage: React.FC = () => {
     }
   };
 
-  // navigation handlers (left sidebar)
-  const handleNavHome = () => {
-    navigate("/home");
-  };
-
-  const handleNavCircles = () => {
-    navigate("/circles");
-  };
-
-  const handleNavViewings = () => {
-    navigate("/viewings");
-  };
-
-  const handleNavAssistant = () => {
-    navigate("/ai");
-  };
-
-  const handleLogout = () => {
-    localStorage.removeItem("token");
-    localStorage.removeItem("authToken");
-    sessionStorage.removeItem("token");
-    sessionStorage.removeItem("authToken");
-    navigate("/login");
-  };
 
   const handleCreateCircle = async () => {
     try {
@@ -264,349 +242,303 @@ const CirclesPage: React.FC = () => {
   // -------- render --------
 
   return (
-    <div className="app-shell">
-      <div className="app-main-layout">
-        {/* Left sidebar - same structure as HomePage, but Circles active */}
-        <aside className="app-sidebar">
-          <div className="app-sidebar-brand">
-            <img
-              src={bfflixLogo}
-              alt="BFFLIX"
-              className="app-sidebar-logo-img"
-            />
-          </div>
+    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-black text-slate-100 flex flex-col">
+      {/* Top bar spans full width */}
+      <TopBar />
 
-          <nav className="app-sidebar-nav">
-            <button
-              className="app-nav-item"
-              type="button"
-              onClick={handleNavHome}
-            >
-              <span className="app-nav-icon">🏠</span>
-              <span>Home</span>
-            </button>
-            <button
-              className="app-nav-item app-nav-item--active"
-              type="button"
-              onClick={handleNavCircles}
-            >
-              <span className="app-nav-icon">👥</span>
-              <span>Circles</span>
-            </button>
-            <button
-              className="app-nav-item"
-              type="button"
-              onClick={handleNavViewings}
-            >
-              <span className="app-nav-icon">🎬</span>
-              <span>Viewings</span>
-            </button>
-            <button
-              className="app-nav-item"
-              type="button"
-              onClick={handleNavAssistant}
-            >
-              <span className="app-nav-icon">✨</span>
-              <span>AI Assistant</span>
-            </button>
-            <button
-              className="app-nav-item"
-              type="button"
-              onClick={() => navigate("/profile")}
-            >
-              <span className="app-nav-icon">👤</span>
-              <span>Profile</span>
-            </button>
-          </nav>
+      {/* Main layout: sidebar + page content */}
+      <div className="flex flex-1">
+        {/* Global left sidebar */}
+        <LeftSidebar />
 
-          <button
-            className="app-logout-button"
-            type="button"
-            onClick={handleLogout}
-          >
-            Log out
-          </button>
-        </aside>
-
-        {/* Main circles content */}
-        <main className="app-feed circles-page">
-          <header className="circles-header">
-            <div className="circles-header-main">
-              <div className="circles-title-row">
-                <span className="circles-icon">👥</span>
-                <h2 className="circles-title">Circles</h2>
+        {/* Page content */}
+        <main className="flex-1 px-8 py-8 max-w-6xl mx-auto w-full">
+          <div className="mt-8">
+            {/* Header */}
+            <div className="w-full flex flex-col items-center relative mb-8">
+              <div className="flex flex-col items-center w-full">
+                <div className="flex items-center justify-center gap-2">
+                  <span className="text-3xl">👥</span>
+                  <h2 className="text-3xl font-bold tracking-tight">Circles</h2>
+                </div>
+                <p className="text-slate-400 mt-2 text-center max-w-xl">
+                  Join circles to connect with others who share your interests in movies and shows.
+                </p>
               </div>
-              <p className="circles-subtitle">
-                Join circles to connect with others who share your interests in
-                movies and shows.
-              </p>
+              <div className="absolute right-0 top-0 flex items-center gap-2">
+                <button
+                  type="button"
+                  className="px-4 py-2 text-sm font-semibold rounded-xl border border-white/15 text-slate-200 hover:bg-white/10 transition"
+                  onClick={() => navigate("/circles/invitations")}
+                >
+                  Pending invites
+                </button>
+                <button
+                  type="button"
+                  className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-pink-600 via-pink-500 to-pink-400 text-white font-semibold rounded-xl shadow hover:brightness-110 transition"
+                  onClick={handleCreateCircleClick}
+                >
+                  <span className="text-lg font-bold">+</span>
+                  <span className="hidden sm:inline">Create Circle</span>
+                </button>
+              </div>
             </div>
 
-            <button
-              type="button"
-              className="circles-create-button"
-              onClick={handleCreateCircleClick}
-            >
-              <span className="circles-create-plus">+</span>
-              Create Circle
-            </button>
-          </header>
-
-          <section className="circles-controls">
-            <div className="circles-tabs">
-              <button
-                type="button"
-                className={
-                  activeTab === "my"
-                    ? "circles-tab circles-tab--active"
-                    : "circles-tab"
-                }
-                onClick={() => setActiveTab("my")}
-              >
-                My Circles
-              </button>
-              <button
-                type="button"
-                className={
-                  activeTab === "discover"
-                    ? "circles-tab circles-tab--active"
-                    : "circles-tab"
-                }
-                onClick={() => setActiveTab("discover")}
-              >
-                Discover
-              </button>
+            {/* Tabs and search */}
+            <div className="flex flex-col items-center w-full">
+              <div className="flex gap-2 mb-4">
+                <button
+                  type="button"
+                  className={`px-5 py-2 rounded-full font-medium transition ${
+                    activeTab === "my"
+                      ? "bg-gradient-to-r from-pink-600 via-pink-500 to-pink-400 text-white shadow"
+                      : "bg-slate-800/70 text-slate-300 border border-slate-700 hover:bg-slate-800"
+                  }`}
+                  onClick={() => setActiveTab("my")}
+                >
+                  My Circles
+                </button>
+                <button
+                  type="button"
+                  className={`px-5 py-2 rounded-full font-medium transition ${
+                    activeTab === "discover"
+                      ? "bg-gradient-to-r from-pink-600 via-pink-500 to-pink-400 text-white shadow"
+                      : "bg-slate-800/70 text-slate-300 border border-slate-700 hover:bg-slate-800"
+                  }`}
+                  onClick={() => setActiveTab("discover")}
+                >
+                  Discover
+                </button>
+              </div>
+              <div className="w-full max-w-2xl mb-2">
+                <input
+                  type="text"
+                  className="w-full px-5 py-2 bg-slate-900/70 rounded-full border border-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-pink-500 text-slate-100"
+                  placeholder="Search circles..."
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                />
+              </div>
             </div>
 
-            <div className="circles-search-wrapper">
-              <input
-                type="text"
-                className="circles-search-input"
-                placeholder="Search circles..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-              />
-            </div>
-          </section>
-
-          {showCreateModal && (
-            <section className="circle-inline-create">
-              <div className="circle-inline-card">
-                <header className="circle-inline-header">
-                  <h3>Create a circle</h3>
-                  <button
-                    type="button"
-                    className="circle-inline-close"
-                    onClick={() => {
-                      setShowCreateModal(false);
-                      setCreateError(null);
-                    }}
-                  >
-                    ×
-                  </button>
-                </header>
-                <div className="circle-inline-row">
-                  <div className="circle-inline-field">
-                    <label>Name</label>
-                    <input
-                      type="text"
-                      value={newName}
-                      onChange={(e) => setNewName(e.target.value)}
-                      placeholder="Circle name"
-                    />
-                  </div>
-                  <div className="circle-inline-field">
-                    <label>Visibility</label>
-                    <div className="circle-inline-toggle">
-                      <button
-                        type="button"
-                        className={
-                          newVisibility === "public"
-                            ? "vis-btn active"
-                            : "vis-btn"
-                        }
-                        onClick={() => setNewVisibility("public")}
-                      >
-                        Public
-                      </button>
-                      <button
-                        type="button"
-                        className={
-                          newVisibility === "private"
-                            ? "vis-btn active"
-                            : "vis-btn"
-                        }
-                        onClick={() => setNewVisibility("private")}
-                      >
-                        Private
-                      </button>
+            {/* Create Modal (unchanged other than indentation) */}
+            {showCreateModal && (
+              <section className="flex justify-center mt-8">
+                <div className="w-full max-w-xl bg-slate-900/90 rounded-2xl border border-slate-800 shadow-2xl p-8 relative">
+                  <header className="flex items-center justify-between mb-4">
+                    <h3 className="text-xl font-bold">Create a circle</h3>
+                    <button
+                      type="button"
+                      className="text-2xl text-slate-400 hover:text-slate-200 px-2"
+                      onClick={() => {
+                        setShowCreateModal(false);
+                        setCreateError(null);
+                      }}
+                      aria-label="Close"
+                    >
+                      ×
+                    </button>
+                  </header>
+                  <div className="flex flex-col gap-4 mb-4">
+                    <div>
+                      <label className="block text-slate-300 font-medium mb-1">
+                        Name
+                      </label>
+                      <input
+                        type="text"
+                        value={newName}
+                        onChange={(e) => setNewName(e.target.value)}
+                        placeholder="Circle name"
+                        className="w-full px-4 py-2 rounded-lg bg-slate-800 border border-slate-700 text-slate-100 focus:outline-none focus:ring-2 focus:ring-pink-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-slate-300 font-medium mb-1">
+                        Visibility
+                      </label>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          className={`px-4 py-1 rounded-full font-medium border transition ${
+                            newVisibility === "public"
+                              ? "bg-green-600/90 text-white border-green-600"
+                              : "bg-slate-800 text-slate-200 border-slate-700 hover:bg-slate-700"
+                          }`}
+                          onClick={() => setNewVisibility("public")}
+                        >
+                          Public
+                        </button>
+                        <button
+                          type="button"
+                          className={`px-4 py-1 rounded-full font-medium border transition ${
+                            newVisibility === "private"
+                              ? "bg-amber-600/90 text-white border-amber-600"
+                              : "bg-slate-800 text-slate-200 border-slate-700 hover:bg-slate-700"
+                          }`}
+                          onClick={() => setNewVisibility("private")}
+                        >
+                          Private
+                        </button>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-slate-300 font-medium mb-1">
+                        Description
+                      </label>
+                      <textarea
+                        value={newDescription}
+                        onChange={(e) => setNewDescription(e.target.value)}
+                        placeholder="Describe your circle..."
+                        rows={3}
+                        className="w-full px-4 py-2 rounded-lg bg-slate-800 border border-slate-700 text-slate-100 focus:outline-none focus:ring-2 focus:ring-pink-500 resize-none"
+                      />
                     </div>
                   </div>
-                </div>
-                <div className="circle-inline-field">
-                  <label>Description</label>
-                  <textarea
-                    value={newDescription}
-                    onChange={(e) => setNewDescription(e.target.value)}
-                    placeholder="Describe your circle..."
-                    rows={3}
-                  />
-                </div>
-                {createError && (
-                  <div className="circles-error" style={{ padding: 0 }}>
-                    {createError}
-                  </div>
-                )}
-                <div className="circle-inline-actions">
-                  <button
-                    type="button"
-                    className="circle-card-button circle-card-button--secondary"
-                    onClick={() => {
-                      setShowCreateModal(false);
-                      setCreateError(null);
-                    }}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    className="circle-card-button circle-card-button--primary"
-                    onClick={handleCreateCircle}
-                    disabled={creating || !newName.trim()}
-                  >
-                    {creating ? "Creating..." : "Create"}
-                  </button>
-                </div>
-              </div>
-            </section>
-          )}
-
-          {error && <div className="circles-error">{error}</div>}
-
-          {loading ? (
-            <div className="circles-loading">Loading circles...</div>
-          ) : (
-            <section className="circles-grid">
-              {circlesForTab.length === 0 ? (
-                <div className="circles-empty">
-                  {activeTab === "my"
-                    ? "You are not a member of any circles yet. Please join a circle."
-                    : "No circles found. Try a different search."}
-                </div>
-              ) : (
-                circlesForTab.map((circle) => {
-                  const id = getCircleId(circle);
-                  console.log(id);
-                  const name = getName(circle);
-                  console.log(name);
-                  const description = getDescription(circle);
-                  console.log(description)
-                  const visibility = getVisibility(circle);
-                  console.log(visibility);
-                  const members = computeMembersCount(circle);
-                  console.log(members);
-                  const posts = computePostsCount(circle);
-                  console.log(posts);
-                  const member = isMember(circle);
-                  console.log(member);
-
-                  const isBusyJoining = joiningCircleId === id;
-                  const isBusyLeaving = leavingCircleId === id;
-
-                  return (
-                    <article
-                      key={id || name}
-                      className="circle-card"
+                  {createError && (
+                    <div className="mb-3 text-sm text-red-400 font-medium">{createError}</div>
+                  )}
+                  <div className="flex justify-end gap-2 mt-2">
+                    <button
+                      type="button"
+                      className="px-4 py-2 rounded-lg border border-slate-700 text-slate-300 hover:bg-slate-800 transition"
                       onClick={() => {
-                        if (id) navigate(`/circles/${id}`);
+                        setShowCreateModal(false);
+                        setCreateError(null);
                       }}
                     >
-                      <div className="circle-card-body">
-                        {/* Name + visibility pill */}
-                        <div className="circle-card-header-row">
-                          <h3 className="circle-card-name">{name}</h3>
-                          <span
-                            className={
-                              visibility === "public"
-                                ? "circle-card-visibility circle-card-visibility--public"
-                                : "circle-card-visibility circle-card-visibility--private"
-                            }
-                          >
-                            {visibility === "public" ? "Public" : "Private"}
-                          </span>
-                        </div>
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      className="px-4 py-2 rounded-lg bg-gradient-to-r from-pink-600 via-pink-500 to-pink-400 text-white font-semibold shadow hover:brightness-110 transition disabled:opacity-60"
+                      onClick={handleCreateCircle}
+                      disabled={creating || !newName.trim()}
+                    >
+                      {creating ? "Creating..." : "Create"}
+                    </button>
+                  </div>
+                </div>
+              </section>
+            )}
 
-                        {description && (
-                          <p className="circle-card-description">
-                            {description}
-                          </p>
-                        )}
-
-                        <div className="circle-card-meta-row">
-                          <div className="circle-card-meta-item">
-                            <span className="circle-card-meta-icon">👥</span>
-                            <span className="circle-card-meta-text">
-                              {members} members
+            {/* Error */}
+            {error && (
+              <div className="mt-4 mb-2 w-full max-w-xl mx-auto bg-red-900/70 border border-red-700 text-red-300 px-4 py-2 rounded-xl text-sm font-medium">
+                {error}
+              </div>
+            )}
+            {/* Loading */}
+            {loading ? (
+              <div className="flex flex-1 items-center justify-center text-lg text-slate-400 font-medium mt-16">
+                <span className="animate-pulse">Loading circles...</span>
+              </div>
+            ) : (
+              <section className="grid gap-6 mt-8 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+                {circlesForTab.length === 0 ? (
+                  <div className="col-span-full text-center text-slate-400 mt-12">
+                    {activeTab === "my"
+                      ? "You are not a member of any circles yet. Please join a circle."
+                      : "No circles found. Try a different search."}
+                  </div>
+                ) : (
+                  circlesForTab.map((circle) => {
+                    const id = getCircleId(circle);
+                    const name = getName(circle);
+                    const description = getDescription(circle);
+                    const visibility = getVisibility(circle);
+                    const members = computeMembersCount(circle);
+                    const posts = computePostsCount(circle);
+                    const member = isMember(circle);
+                    const isBusyJoining = joiningCircleId === id;
+                    const isBusyLeaving = leavingCircleId === id;
+                    return (
+                      <article
+                        key={id || name}
+                        className="bg-slate-900/70 backdrop-blur border border-pink-500/10 rounded-2xl p-5 shadow-xl transition hover:border-pink-500/40 hover:-translate-y-1 cursor-pointer flex flex-col"
+                        onClick={() => {
+                          if (id) navigate(`/circles/${id}`);
+                        }}
+                      >
+                        <div className="flex-1">
+                          <div className="flex items-center justify-between mb-1">
+                            <h3 className="text-lg font-bold text-slate-100 truncate">{name}</h3>
+                            <span
+                              className={`text-xs px-2 py-0.5 rounded-full font-semibold ${
+                                visibility === "public"
+                                  ? "bg-green-700/80 text-green-100"
+                                  : "bg-amber-700/80 text-amber-100"
+                              }`}
+                            >
+                              {visibility === "public" ? "Public" : "Private"}
                             </span>
                           </div>
-                          <div className="circle-card-meta-item">
-                            <span className="circle-card-meta-icon">📈</span>
-                            <span className="circle-card-meta-text">
-                              {posts} posts
-                            </span>
+                          {description && (
+                            <p className="text-slate-300 text-sm mt-1 mb-3 line-clamp-3">{description}</p>
+                          )}
+                          <div className="flex gap-4 mt-2 mb-2">
+                            <div className="flex items-center gap-1 text-xs text-slate-300">
+                              <span className="text-base">👥</span>
+                              <span>
+                                <span className="font-semibold">{members}</span>
+                                <span className="ml-1">members</span>
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-1 text-xs text-slate-300">
+                              <span className="text-base">📈</span>
+                              <span>
+                                <span className="font-semibold">{posts}</span>
+                                <span className="ml-1">posts</span>
+                              </span>
+                            </div>
                           </div>
+                          {member && (
+                            <span className="inline-block mt-1 text-xs bg-pink-600/80 text-white px-2 py-0.5 rounded-full font-semibold">
+                              Member
+                            </span>
+                          )}
                         </div>
-
-                        {member && (
-                          <span className="circle-card-member-pill">Member</span>
-                        )}
-                      </div>
-
-                      <div className="circle-card-actions">
-                        {member ? (
-                          // You are already in this circle
-                          <button
-                            type="button"
-                            className="circle-card-button circle-card-button--secondary"
-                            disabled={isBusyLeaving}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleLeave(circle);
-                            }}
-                          >
-                            {isBusyLeaving ? "Leaving..." : "Leave"}
-                          </button>
-                        ) : visibility === "public" ? (
-                          // Public circle you are not in: you can join
-                          <button
-                            type="button"
-                            className="circle-card-button circle-card-button--secondary"
-                            disabled={isBusyJoining}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleJoin(circle);
-                            }}
-                          >
-                            {isBusyJoining ? "Joining..." : "Join"}
-                          </button>
-                        ) : (
-                          // Private circle and you are not a member: you cannot join without invite
-                          <button
-                            type="button"
-                            className="circle-card-button circle-card-button--secondary"
-                            disabled
-                          >
-                            Private circle
-                          </button>
-                        )}
-                      </div>
-                    </article>
-                  );
-                })
-              )}
-            </section>
-          )}
-
+                        <div className="mt-4">
+                          {member ? (
+                            <button
+                              type="button"
+                              className="w-full px-4 py-2 rounded-lg border border-pink-500 text-pink-300 hover:bg-pink-500/10 hover:text-pink-100 font-semibold transition disabled:opacity-60"
+                              disabled={isBusyLeaving}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleLeave(circle);
+                              }}
+                            >
+                              {isBusyLeaving ? "Leaving..." : "Leave"}
+                            </button>
+                          ) : visibility === "public" ? (
+                            <button
+                              type="button"
+                              className="w-full px-4 py-2 rounded-lg border border-pink-500 text-pink-300 hover:bg-pink-500/10 hover:text-pink-100 font-semibold transition disabled:opacity-60"
+                              disabled={isBusyJoining}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleJoin(circle);
+                              }}
+                            >
+                              {isBusyJoining ? "Joining..." : "Join"}
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              className="w-full px-4 py-2 rounded-lg border border-amber-500 text-amber-200 cursor-not-allowed font-semibold"
+                              disabled
+                            >
+                              Private circle
+                            </button>
+                          )}
+                        </div>
+                      </article>
+                    );
+                  })
+                )}
+              </section>
+            )}
+          </div>
         </main>
       </div>
     </div>
