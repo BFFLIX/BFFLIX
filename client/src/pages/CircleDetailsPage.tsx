@@ -12,6 +12,8 @@ type Member = {
   id: string;
   name: string;
   email?: string;
+  username?: string;
+  avatarUrl?: string;
   role: MemberRole;
   isOwner?: boolean;
   isModerator?: boolean;
@@ -38,7 +40,9 @@ type CircleDetail = {
 
 type FeedPost = {
   _id: string;
+  authorId?: string;
   authorName: string;
+  authorAvatarUrl?: string;
   circleNames: string[];
   createdAt: string;
   title: string;
@@ -84,6 +88,11 @@ const CircleDetailsPage = () => {
             id: String(m?.id || m?._id || m),
             name: m?.name || "Member",
             email: m?.email,
+            username: m?.username,
+            avatarUrl:
+              typeof m?.avatarUrl === "string" && m.avatarUrl.trim().length
+                ? m.avatarUrl.trim()
+                : undefined,
             role:
               m?.role === "owner" || m?.role === "moderator"
                 ? (m.role as MemberRole)
@@ -125,6 +134,11 @@ const CircleDetailsPage = () => {
         : [];
 
       const normalized: FeedPost[] = rawItems.map((item) => {
+        const authorId =
+          item.authorId ??
+          item.author?._id ??
+          item.author?._id?.$oid ??
+          item.author?._id?.toString?.();
         // Derive author name from various possible shapes
         const authorName =
           item.authorName ||
@@ -132,6 +146,13 @@ const CircleDetailsPage = () => {
           item.author?.fullName ||
           item.author?.displayName ||
           "Unknown user";
+        const avatarCandidate =
+          typeof item.authorAvatarUrl === "string"
+            ? item.authorAvatarUrl.trim()
+            : typeof item.author?.avatarUrl === "string"
+            ? item.author.avatarUrl.trim()
+            : "";
+        const authorAvatarUrl = avatarCandidate || undefined;
 
         // Derive circle names either from a prepared array or from a `circles` array
         const circleNames: string[] = Array.isArray(item.circleNames)
@@ -169,7 +190,9 @@ const CircleDetailsPage = () => {
 
         return {
           _id: String(item._id ?? item.id),
+          authorId: authorId ? String(authorId) : undefined,
           authorName,
+          authorAvatarUrl,
           circleNames,
           createdAt: item.createdAt ?? item.created_at ?? new Date().toISOString(),
           title,
@@ -455,18 +478,31 @@ const CircleDetailsPage = () => {
                             className="flex items-center justify-between gap-3 rounded-xl border border-white/5 bg-white/5/10 px-3 py-2.5"
                           >
                             <div className="flex items-center gap-3">
-                              <div className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-pink-500 to-red-500 text-sm font-semibold">
-                                {m.name?.[0]?.toUpperCase() || "?"}
+                              <div className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-pink-500 to-red-500 text-sm font-semibold overflow-hidden">
+                                {m.avatarUrl ? (
+                                  <img
+                                    src={m.avatarUrl}
+                                    alt={`${m.name || "Member"} avatar`}
+                                    className="h-full w-full object-cover"
+                                  />
+                                ) : (
+                                  <span>{m.name?.[0]?.toUpperCase() || "?"}</span>
+                                )}
                               </div>
                               <div className="flex flex-col">
-                                <span className="text-sm font-medium text-slate-50">
-                                  {m.name}
+                              <span className="text-sm font-medium text-slate-50">
+                                {m.name}
+                              </span>
+                              {m.email && (
+                                <span className="text-xs text-slate-400">
+                                  {m.email}
                                 </span>
-                                {m.email && (
-                                  <span className="text-xs text-slate-400">
-                                    {m.email}
-                                  </span>
-                                )}
+                              )}
+                              {m.username && (
+                                <span className="text-xs text-slate-500">
+                                  @{m.username}
+                                </span>
+                              )}
                                 <div className="mt-1 flex flex-wrap gap-1">
                                   <span
                                     className={`text-[11px] uppercase tracking-wide px-2 py-0.5 rounded-full border ${
@@ -527,8 +563,16 @@ const CircleDetailsPage = () => {
                             {/* Post header */}
                             <header className="flex items-start justify-between gap-3">
                               <div className="flex items-center gap-3">
-                                <div className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-pink-500 to-red-500 text-sm font-semibold">
-                                  {post.authorName?.charAt(0).toUpperCase() || "?"}
+                                <div className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-pink-500 to-red-500 text-sm font-semibold overflow-hidden">
+                                  {post.authorAvatarUrl ? (
+                                    <img
+                                      src={post.authorAvatarUrl}
+                                      alt={`${post.authorName || "User"} avatar`}
+                                      className="h-full w-full object-cover"
+                                    />
+                                  ) : (
+                                    <span>{post.authorName?.charAt(0).toUpperCase() || "?"}</span>
+                                  )}
                                 </div>
                                 <div className="flex flex-col">
                                   <span className="text-sm font-medium text-slate-50">
@@ -657,7 +701,7 @@ const CircleDetailsPage = () => {
               <input
                 type="text"
                 className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-pink-500/70"
-                placeholder="ex: test@example.com or Test User"
+                placeholder="ex: @username or test@example.com"
                 value={inviteIdentifier}
                 onChange={(e) => setInviteIdentifier(e.target.value)}
               />

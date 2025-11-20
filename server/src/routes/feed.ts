@@ -119,7 +119,10 @@ r.get(
         new Set(rows.map((r: any) => String(r.authorId)).filter(Boolean))
       );
       const mutualMap = new Map<string, number>();
-      const authorNameMap = new Map<string, string>();
+      const authorProfileMap = new Map<
+        string,
+        { name: string; avatarUrl?: string }
+      >();
 
       if (authorIds.length) {
         await Promise.all(
@@ -133,11 +136,20 @@ r.get(
         );
 
         const authors = await User.find({ _id: { $in: authorIds } })
-          .select("_id name")
+          .select("_id name avatarUrl")
           .lean();
-        authors.forEach((u: any) =>
-          authorNameMap.set(String(u._id), u.name || "Someone")
-        );
+        authors.forEach((u: any) => {
+          const safeName =
+            typeof u.name === "string" && u.name.trim().length
+              ? u.name.trim()
+              : "Someone";
+          const avatar =
+            typeof u.avatarUrl === "string" ? u.avatarUrl.trim() : "";
+          authorProfileMap.set(String(u._id), {
+            name: safeName,
+            avatarUrl: avatar || undefined,
+          });
+        });
       }
 
       // Compute recent circle activity for smart ranking (last 14 days)
@@ -431,10 +443,20 @@ r.get(
 
         const key = String((row as any).id || (row as any)._id);
 
+        const authorKey =
+          row && row.authorId != null ? String(row.authorId) : "";
+        const authorProfile = authorKey
+          ? authorProfileMap.get(authorKey)
+          : undefined;
+        const fallbackName =
+          (typeof row?.authorName === "string" && row.authorName.trim()) ||
+          "Someone";
+
         return {
           ...row,
-          authorId: row.authorId ? String(row.authorId) : undefined,
-          authorName: authorNameMap.get(String(row.authorId)) || "Someone",
+          authorId: authorKey || undefined,
+          authorName: authorProfile?.name || fallbackName,
+          authorAvatarUrl: authorProfile?.avatarUrl,
           circleNames,
           likeCount: likeCounts.get(key) || 0,
           commentCount: commentCounts.get(key) || 0,
