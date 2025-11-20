@@ -73,6 +73,12 @@ export default function AuthPage() {
   const [forgotEmail, setForgotEmail] = useState("");
   const [isForgotSubmitting, setIsForgotSubmitting] = useState(false);
 
+  // Email verification modal state
+  const [showVerifyModal, setShowVerifyModal] = useState(false);
+  const [verifyCode, setVerifyCode] = useState("");
+  const [isVerifying, setIsVerifying] = useState(false);
+  const [pendingVerificationEmail, setPendingVerificationEmail] = useState("");
+
   // Show / hide password state
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
@@ -83,26 +89,17 @@ export default function AuthPage() {
 
   const isLogin = mode === "login";
 
-      const data = await res.json();
-      // Backend returns { token, user: { id, email, name } }
-      if (data?.token) {
-        try {
-          window.localStorage.setItem("bfflix_token", data.token);
-        } catch (e) {
-          console.warn("Could not persist token to localStorage", e);
-        }
-      }
+  // When coming back from email verification, show a success message and force login mode
+  useEffect(() => {
+    const verifiedParam =
+      searchParams.get("verified") ||
+      searchParams.get("emailVerified") ||
+      searchParams.get("verification");
 
-      console.log("Login success:", data);
-
-      // Redirect to home/dashboard
-      navigate("/home");
-
-    } catch (err: any) {
-      console.error(err);
-      setErrorMsg(err.message || "Login failed. Please try again.");
-    } finally {
-      setIsLoading(false);
+    if (verifiedParam) {
+      setMode("login");
+      setError(null);
+      setInfoMessage("Your email has been verified. You can now sign in.");
     }
   }, [searchParams]);
 
@@ -155,33 +152,136 @@ export default function AuthPage() {
 
     setIsLoading(true);
 
-    try {
-      const endpoint = isLogin ? "/auth/login" : "/auth/signup";
-      const payload: Record<string, any> = { email, password };
-
-      if (!isLogin) {
-        const fullName = `${firstName} ${lastName}`.trim();
-        payload.name = fullName;
-      }
-
-      const data = await apiPost<AuthResponse>(endpoint, payload);
-
-      // Persist token in localStorage as a backup for when cookies are blocked
+    if (isLogin) {
+      // LOGIN FLOW
       try {
-        window.localStorage.setItem("bfflix_token", data.token);
-      } catch {
-        // ignore storage failures
-      }
+        const payload: Record<string, any> = { email, password };
+        const data = await apiPost<AuthResponse>("/auth/login", payload);
 
-      navigate("/home");
+        // Persist token in localStorage as a backup
+        try {
+          window.localStorage.setItem("bfflix_token", data.token);
+        } catch {
+          // ignore storage failures
+        }
+
+        navigate("/home");
+      } catch (err: any) {
+        const raw = err?.message || "";
+
+        // Handle unverified email error from backend login
+        if (
+          raw === "email_not_verified" ||
+          raw === "unverified_email" ||
+          raw === "email_not_confirmed"
+        ) {
+          setPendingVerificationEmail(email);
+          setShowVerifyModal(true);
+          setInfoMessage(
+            "We emailed you a 6-digit verification code. Enter it below to verify your account."
+          );
+          setError(null);
+        } else {
+          const msg =
+            raw === "missing_token"
+              ? "Login worked, but your browser blocked the session cookie. Please enable cookies for BFFlix or try another browser."
+              : raw || "Something went wrong. Please try again.";
+          setError(msg);
+        }
+      } finally {
+        setIsLoading(false);
+      }
+    } else {
+      // SIGNUP FLOW
+      try {
+        const fullName = `${firstName} ${lastName}`.trim();
+        const payload: Record<string, any> = {
+          email,
+          password,
+          name: fullName,
+        };
+
+        // Backend creates the user and sends verification email + 6-digit code,
+        // but does NOT log the user in yet.
+        await apiPost("/auth/signup", payload);
+
+        // Reset register-only fields and switch back to login mode
+        setMode("login");
+        setAcceptedTerms(false);
+        setAcceptedPrivacy(false);
+        setConfirmPassword("");
+
+        setInfoMessage(
+          "Account created. Please check your email for a 6-digit verification code before signing in."
+        );
+      } catch (err: any) {
+        const raw = err?.message || "";
+        const msg =
+          raw ||
+          "Something went wrong while creating your account. Please try again.";
+        setError(msg);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+  }
+
+  async function handleVerifyCodeSubmit(e: FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setInfoMessage(null);
+
+    const trimmedCode = verifyCode.trim();
+    const emailToVerify = pendingVerificationEmail || email.trim();
+
+    if (!emailToVerify) {
+      setError("We could not determine which email to verify. Please log in again.");
+      return;
+    }
+
+    if (!trimmedCode || trimmedCode.length < 6) {
+      setError("Please enter the 6-digit verification code from your email.");
+      return;
+    }
+
+    try {
+      setIsVerifying(true);
+
+      const data = await apiPost<AuthResponse>("/auth/verify-email", {
+        email: emailToVerify,
+        code: trimmedCode,
+      });
+
+      // If verification returns a token, log the user in immediately
+      if (data?.token) {
+        try {
+          window.localStorage.setItem("bfflix_token", data.token);
+        } catch {
+          // ignore storage failures
+        }
+        setShowVerifyModal(false);
+        setVerifyCode("");
+        setPendingVerificationEmail("");
+        setInfoMessage(null);
+        navigate("/home");
+      } else {
+        // Otherwise, just show a message and send them back to login
+        setShowVerifyModal(false);
+        setVerifyCode("");
+        setPendingVerificationEmail("");
+        setMode("login");
+        setInfoMessage("Your email has been verified. Please sign in again.");
+      }
     } catch (err: any) {
       const msg =
-        err?.message === "missing_token"
-          ? "Login worked, but your browser blocked the session cookie. Please enable cookies for BFFlix or try another browser."
-          : err?.message || "Something went wrong. Please try again.";
+        err?.message === "invalid_code"
+          ? "That verification code is not valid. Please check your email and try again."
+          : err?.message === "code_expired"
+          ? "That verification code has expired. Request a new one from your email."
+          : err?.message || "We could not verify your email. Please try again.";
       setError(msg);
     } finally {
-      setIsLoading(false);
+      setIsVerifying(false);
     }
   }
 
@@ -1038,6 +1138,65 @@ export default function AuthPage() {
                 <p className="text-zinc-300">We update this policy periodically. Continued use means acceptance of changes.</p>
               </section>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Email verification modal */}
+      {showVerifyModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4">
+          <div className="relative max-w-md w-full rounded-2xl bg-zinc-950 border border-zinc-800 shadow-2xl p-6">
+            <button
+              type="button"
+              onClick={() => {
+                if (!isVerifying) {
+                  setShowVerifyModal(false);
+                  setVerifyCode("");
+                }
+              }}
+              className="absolute right-3 top-3 rounded-full p-1.5 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/70 transition"
+              aria-label="Close email verification"
+            >
+              ✕
+            </button>
+            <h3 className="text-lg font-semibold text-white mb-2">
+              Verify your email
+            </h3>
+            <p className="text-sm text-zinc-300 mb-4">
+              We sent a 6-digit verification code to{" "}
+              <span className="font-medium text-zinc-100">
+                {pendingVerificationEmail || email}
+              </span>
+              . Enter it below to activate your account.
+            </p>
+            <form onSubmit={handleVerifyCodeSubmit} className="space-y-3">
+              <div className="space-y-1.5">
+                <label className="block text-xs font-medium text-zinc-300">
+                  6-digit code
+                </label>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={6}
+                  value={verifyCode}
+                  onChange={(e) => setVerifyCode(e.target.value)}
+                  placeholder="123456"
+                  className="w-full rounded-xl bg-zinc-950/80 border border-zinc-800 px-3 py-2.5 text-sm text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-red-600 focus:border-red-600 transition tracking-[0.4em] text-center"
+                  required
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={isVerifying}
+                className="w-full rounded-xl bg-red-600 hover:bg-red-500 text-sm font-medium text-white py-2.5 flex items-center justify-center gap-2 shadow-md shadow-red-900/60 transition disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                {isVerifying ? "Verifying..." : "Verify email"}
+              </button>
+              <p className="text-[11px] text-zinc-500">
+                If you did not receive the email, check your spam folder. If it is
+                not there, request a new verification email from the login screen.
+              </p>
+            </form>
           </div>
         </div>
       )}
