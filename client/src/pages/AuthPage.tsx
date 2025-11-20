@@ -147,7 +147,7 @@ export default function AuthPage() {
     setIsLoading(true);
 
     try {
-      const endpoint = isLogin ? "/auth/login" : "/auth/register";
+      const endpoint = isLogin ? "/auth/login" : "/auth/signup";
       const payload: Record<string, any> = { email, password };
 
       if (!isLogin) {
