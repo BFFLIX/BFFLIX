@@ -10,6 +10,10 @@ import { requireAuth, AuthedRequest } from "../middleware/auth";
 import { validateBody, validateQuery, validateParams } from "../middleware/validate";
 import { asyncHandler } from "../middleware/asyncHandler";
 import Viewing from "../models/Viewing";
+import Like from "../models/Like";
+import Comment from "../models/Comment";
+import tmdb from "../Services/tmdb.service";
+import { getPlayableServicesForTitle } from "../Services/providers";
 
 const r = Router();
 
@@ -173,7 +177,138 @@ r.get(
       .limit(limit)
       .lean();
 
-    const enrichedItems = await attachAuthorProfiles(items);
+    const postsWithProfiles = await attachAuthorProfiles(items);
+
+    const postIds = postsWithProfiles.map((p) => p._id as Types.ObjectId);
+
+    const circleIdSet = new Set<string>();
+    postsWithProfiles.forEach((p) => {
+      if (Array.isArray(p.circles)) {
+        p.circles.forEach((cid: any) => circleIdSet.add(String(cid)));
+      }
+    });
+
+    const [likesAgg, myLikes, commentsAgg, circleDocs] = await Promise.all([
+      postIds.length
+        ? Like.aggregate([
+            { $match: { postId: { $in: postIds } } },
+            { $group: { _id: "$postId", count: { $sum: 1 } } },
+          ])
+        : [],
+      postIds.length
+        ? Like.find({ postId: { $in: postIds }, userId: req.user!.id })
+            .select("postId")
+            .lean()
+        : [],
+      postIds.length
+        ? Comment.aggregate([
+            { $match: { postId: { $in: postIds } } },
+            { $group: { _id: "$postId", count: { $sum: 1 } } },
+          ])
+        : [],
+      circleIdSet.size
+        ? Circle.find({ _id: { $in: Array.from(circleIdSet) } })
+            .select("_id name")
+            .lean()
+        : [],
+    ]);
+
+    const likeCounts = new Map<string, number>();
+    likesAgg.forEach((row: any) => likeCounts.set(String(row._id), row.count));
+
+    const likedByMe = new Set<string>();
+    myLikes.forEach((row: any) => likedByMe.add(String(row.postId)));
+
+    const commentCounts = new Map<string, number>();
+    commentsAgg.forEach((row: any) => commentCounts.set(String(row._id), row.count));
+
+    const circleNameMap = new Map<string, string>();
+    circleDocs.forEach((doc: any) => {
+      circleNameMap.set(String(doc._id), doc.name || "Circle");
+    });
+
+    const memoMeta = new Map<string, { title: string; year?: number; poster?: string }>();
+    const memoProviders = new Map<string, string[]>();
+
+    const fetchMeta = async (type: "movie" | "tv", tmdbId: string) => {
+      const key = `${type}:${tmdbId}`;
+      if (memoMeta.has(key)) return memoMeta.get(key)!;
+
+      try {
+        if (type === "movie") {
+          const d = await tmdb.getMovieDetails(tmdbId);
+          const meta = {
+            title: d?.title || d?.original_title || "Untitled",
+            year: d?.release_date ? Number(String(d.release_date).slice(0, 4)) : undefined,
+            poster: tmdb.getPosterURL(d?.poster_path || null) || undefined,
+          };
+          memoMeta.set(key, meta);
+          return meta;
+        }
+
+        const d = await tmdb.getTVDetails(tmdbId);
+        const meta = {
+          title: d?.name || d?.original_name || "Untitled",
+          year: d?.first_air_date ? Number(String(d.first_air_date).slice(0, 4)) : undefined,
+          poster: tmdb.getPosterURL(d?.poster_path || null) || undefined,
+        };
+        memoMeta.set(key, meta);
+        return meta;
+      } catch (err) {
+        console.warn("tmdb lookup failed for", key, err);
+        const fallback = { title: "Untitled" };
+        memoMeta.set(key, fallback);
+        return fallback;
+      }
+    };
+
+    const fetchProviders = async (type: "movie" | "tv", tmdbId: string) => {
+      const key = `${type}:${tmdbId}`;
+      if (memoProviders.has(key)) return memoProviders.get(key)!;
+      try {
+        const providers = await getPlayableServicesForTitle(type, tmdbId, "US");
+        memoProviders.set(key, providers);
+        return providers;
+      } catch (err) {
+        console.warn("provider lookup failed for", key, err);
+        memoProviders.set(key, []);
+        return [];
+      }
+    };
+
+    const enrichedItems = await Promise.all(
+      postsWithProfiles.map(async (post) => {
+        const id = String(post._id);
+        const mediaType: "movie" | "tv" = post.type === "tv" ? "tv" : "movie";
+        const meta = await fetchMeta(mediaType, String(post.tmdbId));
+        const providers = await fetchProviders(mediaType, String(post.tmdbId));
+
+        const circleNames = Array.isArray(post.circles)
+          ? post.circles
+              .map((cid: any) => circleNameMap.get(String(cid)))
+              .filter((n): n is string => Boolean(n))
+          : [];
+
+        return {
+          ...post,
+          _id: id,
+          id,
+          type: mediaType,
+          title: meta?.title || "Untitled",
+          year: meta?.year,
+          imageUrl: meta?.poster,
+          services: providers,
+          circleNames,
+          body:
+            typeof post.comment === "string" && post.comment.trim().length
+              ? post.comment
+              : post.body || post.text || "",
+          likeCount: likeCounts.get(id) || 0,
+          commentCount: commentCounts.get(id) || 0,
+          likedByMe: likedByMe.has(id),
+        };
+      })
+    );
 
     res.json({ page, limit, items: enrichedItems });
   })

@@ -165,28 +165,46 @@ const CircleDetailsPage = () => {
 
         // Title / year may be stored under different keys
         const title =
-          item.title || item.mediaTitle || item.movieTitle || item.showTitle || "";
+          item.title ||
+          item.name ||
+          item.mediaTitle ||
+          item.movieTitle ||
+          item.showTitle ||
+          "";
         const year =
           typeof item.year === "number"
             ? item.year
             : typeof item.mediaYear === "number"
             ? item.mediaYear
+            : item.releaseDate
+            ? Number(String(item.releaseDate).slice(0, 4))
+            : item.firstAirDate
+            ? Number(String(item.firstAirDate).slice(0, 4))
             : undefined;
 
         // Determine type (Movie / Show)
-        const type: FeedPost["type"] =
-          item.type === "Show" || item.type === "Movie"
-            ? item.type
-            : item.mediaType === "tv" || item.mediaType === "show"
-            ? "Show"
-            : "Movie";
+        const type: FeedPost["type"] = (() => {
+          const raw = String(item.type ?? item.mediaType ?? "").toLowerCase();
+          if (raw === "tv" || raw === "tv_show" || raw === "show") return "Show";
+          return "Movie";
+        })();
 
         // Services / platforms
         const services: string[] = Array.isArray(item.services)
           ? item.services
+          : Array.isArray(item.playableOnMyServices)
+          ? item.playableOnMyServices
+          : Array.isArray(item.availableOn)
+          ? item.availableOn
           : Array.isArray(item.platforms)
           ? item.platforms
           : [];
+
+        const body =
+          item.body ||
+          item.text ||
+          (typeof item.comment === "string" ? item.comment : "") ||
+          "";
 
         return {
           _id: String(item._id ?? item.id),
@@ -198,8 +216,13 @@ const CircleDetailsPage = () => {
           title,
           year,
           type,
-          rating: typeof item.rating === "number" ? item.rating : item.score ?? 0,
-          body: item.body || item.text || "",
+          rating:
+            typeof item.rating === "number"
+              ? item.rating
+              : typeof item.score === "number"
+              ? item.score
+              : 0,
+          body,
           services,
           likeCount:
             typeof item.likeCount === "number"
@@ -213,7 +236,12 @@ const CircleDetailsPage = () => {
               : typeof item.comments === "number"
               ? item.comments
               : 0,
-          imageUrl: item.imageUrl || item.posterUrl || item.backdropUrl || undefined,
+          imageUrl:
+            item.imageUrl ||
+            item.poster ||
+            item.posterUrl ||
+            item.backdropUrl ||
+            undefined,
         };
       });
 
@@ -577,9 +605,6 @@ const CircleDetailsPage = () => {
                                 <div className="flex flex-col">
                                   <span className="text-sm font-medium text-slate-50">
                                     {post.authorName}
-                                  </span>
-                                  <span className="text-xs text-slate-400">
-                                    {post.circleNames?.join(", ") || "No circles"}
                                   </span>
                                 </div>
                               </div>
