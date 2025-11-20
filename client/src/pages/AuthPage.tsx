@@ -83,17 +83,26 @@ export default function AuthPage() {
 
   const isLogin = mode === "login";
 
-  // When coming back from email verification, show a success message and force login mode
-  useEffect(() => {
-    const verifiedParam =
-      searchParams.get("verified") ||
-      searchParams.get("emailVerified") ||
-      searchParams.get("verification");
+      const data = await res.json();
+      // Backend returns { token, user: { id, email, name } }
+      if (data?.token) {
+        try {
+          window.localStorage.setItem("bfflix_token", data.token);
+        } catch (e) {
+          console.warn("Could not persist token to localStorage", e);
+        }
+      }
 
-    if (verifiedParam) {
-      setMode("login");
-      setError(null);
-      setInfoMessage("Your email has been verified. You can now sign in.");
+      console.log("Login success:", data);
+
+      // Redirect to home/dashboard
+      navigate("/home");
+
+    } catch (err: any) {
+      console.error(err);
+      setErrorMsg(err.message || "Login failed. Please try again.");
+    } finally {
+      setIsLoading(false);
     }
   }, [searchParams]);
 
