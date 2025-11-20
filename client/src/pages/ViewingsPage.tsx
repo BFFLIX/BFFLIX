@@ -372,8 +372,8 @@ const ViewingsPage: FC = () => {
         <main className="flex-1 overflow-y-auto px-4 pb-10 pt-6 md:px-8 mt-2">
           <section className="mx-auto flex max-w-6xl flex-col gap-6">
             {/* Header + Add button */}
-            <div className="flex flex-col items-center justify-center gap-2 text-center">
-              <div>
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div className="flex flex-col text-left">
                 <div className="flex items-center gap-3">
                   <div className="flex h-9 w-9 items-center justify-center rounded-full bg-pink-500/20 text-xl">
                     <span role="img" aria-label="viewings">
@@ -384,13 +384,13 @@ const ViewingsPage: FC = () => {
                     My Viewings
                   </h1>
                 </div>
-                <p className="mt-1 text-sm text-slate-400 text-center">
+                <p className="mt-1 text-sm text-slate-400">
                   Track what you have watched and revisit your own notes instead
                   of generic summaries.
                 </p>
               </div>
 
-              <div className="w-full flex justify-end mt-1">
+              <div className="w-full md:w-auto flex justify-end">
                 <button
                   type="button"
                   onClick={openCreateModal}
@@ -540,7 +540,7 @@ const ViewingsPage: FC = () => {
 
             {/* Cards grid */}
             {!isLoading && !error && filtered.length > 0 && (
-              <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-4">
+              <div className="grid gap-8 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
                 {filtered.map((v) => {
                   const circles = normalizeCircleNames(v.circles);
                   const safeRating =
@@ -560,21 +560,21 @@ const ViewingsPage: FC = () => {
                   return (
                     <article
                       key={v._id}
-                      className="flex flex-col overflow-hidden rounded-3xl bg-slate-950/80 shadow-xl shadow-black/60 ring-1 ring-white/5 transition hover:-translate-y-1 hover:ring-pink-500/60"
+                      className="flex flex-col overflow-hidden rounded-3xl bg-slate-950/80 shadow-xl shadow-black/60 ring-1 ring-white/5 transition hover:-translate-y-1 hover:ring-pink-500/60 min-h-[540px]"
                     >
                       {/* Poster */}
                       <div
-                        className="relative cursor-pointer"
+                        className="relative cursor-pointer h-[420px] bg-slate-900 flex items-center justify-center overflow-hidden"
                         onClick={() => openDetails(v)}
                       >
                         {v.posterUrl ? (
                           <img
                             src={v.posterUrl}
                             alt={displayTitle}
-                            className="h-60 w-full object-cover"
+                            className="h-full w-auto object-contain"
                           />
                         ) : (
-                          <div className="flex h-60 w-full items-center justify-center bg-slate-900 text-sm text-slate-500">
+                          <div className="flex h-full w-full items-center justify-center bg-slate-900 text-sm text-slate-500">
                             No poster
                           </div>
                         )}

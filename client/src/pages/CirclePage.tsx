@@ -255,24 +255,26 @@ const CirclesPage: React.FC = () => {
         <main className="flex-1 px-8 py-8 max-w-6xl mx-auto w-full">
           <div className="mt-8">
             {/* Header */}
-            <div className="w-full flex flex-col items-center relative mb-8">
-              <div className="flex flex-col items-center w-full">
-                <div className="flex items-center justify-center gap-2">
+            <div className="w-full flex flex-col gap-4 md:flex-row md:items-start relative mb-8">
+              <div className="flex flex-col w-full text-left gap-2">
+                <div className="flex items-center gap-2">
                   <span className="text-3xl">👥</span>
                   <h2 className="text-3xl font-bold tracking-tight">Circles</h2>
                 </div>
-                <p className="text-slate-400 mt-2 text-center max-w-xl">
+                <p className="text-slate-400 mt-2 max-w-2xl">
                   Join circles to connect with others who share your interests in movies and shows.
                 </p>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    className="px-4 py-2 text-sm font-semibold rounded-xl border border-white/15 text-slate-200 hover:bg-white/10 transition"
+                    onClick={() => navigate("/circles/invitations")}
+                  >
+                    Pending invites
+                  </button>
+                </div>
               </div>
-              <div className="absolute right-0 top-0 flex items-center gap-2">
-                <button
-                  type="button"
-                  className="px-4 py-2 text-sm font-semibold rounded-xl border border-white/15 text-slate-200 hover:bg-white/10 transition"
-                  onClick={() => navigate("/circles/invitations")}
-                >
-                  Pending invites
-                </button>
+              <div className="md:absolute md:right-0 md:top-0 flex items-start justify-end gap-2">
                 <button
                   type="button"
                   className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-pink-600 via-pink-500 to-pink-400 text-white font-semibold rounded-xl shadow hover:brightness-110 transition"
@@ -285,8 +287,8 @@ const CirclesPage: React.FC = () => {
             </div>
 
             {/* Tabs and search */}
-            <div className="flex flex-col items-center w-full">
-              <div className="flex gap-2 mb-4">
+            <div className="flex flex-col w-full gap-4">
+              <div className="flex gap-2 mb-2 flex-wrap">
                 <button
                   type="button"
                   className={`px-5 py-2 rounded-full font-medium transition ${
