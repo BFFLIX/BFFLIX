@@ -20,6 +20,14 @@ const avatarDataUrlPattern =
 
 const updateSchema = z.object({
   name: z.string().min(1).optional(),
+  username: z
+    .string()
+    .trim()
+    .min(3)
+    .max(30)
+    .regex(/^[a-z0-9._-]+$/i, "Username can only contain letters, numbers, dots, dashes, and underscores")
+    .transform((val) => val.toLowerCase())
+    .optional(),
   avatarUrl: z
     .union([
       //custom pfp pics lets freaking go
@@ -109,17 +117,28 @@ r.patch("/", requireAuth, async (req: AuthedRequest, res) => {
   if (!parsed.success) return res.status(400).json(parsed.error.format());
 
   const updateData = { ...parsed.data } as any;
+  if (Object.prototype.hasOwnProperty.call(updateData, "username") && !updateData.username) {
+    delete updateData.username;
+  }
   if (Object.prototype.hasOwnProperty.call(updateData, "avatarUrl")) {
     if (!updateData.avatarUrl) {
       updateData.avatarUrl = "";
     }
   }
 
-  const updated = await User.findByIdAndUpdate(
-    req.user!.id,
-    updateData,
-    { new: true, runValidators: true, select: "-passwordHash" }
-  ).lean();
+  let updated;
+  try {
+    updated = await User.findByIdAndUpdate(
+      req.user!.id,
+      updateData,
+      { new: true, runValidators: true, select: "-passwordHash" }
+    ).lean();
+  } catch (err: any) {
+    if (err?.code === 11000 && err?.keyPattern?.username) {
+      return res.status(409).json({ error: "username_already_in_use" });
+    }
+    throw err;
+  }
 
   if (Object.prototype.hasOwnProperty.call(updateData, "services")) {
     await syncUserStreamingServices(req.user!.id, Array.isArray(updateData.services) ? updateData.services : []);

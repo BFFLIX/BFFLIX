@@ -30,6 +30,8 @@ const tokenCookieOptions: CookieOptions = {
 };
 
 // ---------- Schemas ----------
+const USERNAME_REGEX = /^[a-z0-9._-]+$/i;
+
 const signupSchema = z.object({
   email: z.string().email().transform(normEmail),
   password: z
@@ -38,6 +40,14 @@ const signupSchema = z.object({
     .regex(/[A-Z]/, "Must include an uppercase letter")
     .regex(/[0-9]/, "Must include a number"),
   name: z.string().trim().min(1).max(50),
+  username: z
+    .string()
+    .trim()
+    .min(3, "Username must be at least 3 characters")
+    .max(30, "Username must be at most 30 characters")
+    .regex(USERNAME_REGEX, "Only letters, numbers, dots, dashes, and underscores are allowed")
+    .transform((val) => val.toLowerCase())
+    .optional(),
 });
 
 const loginSchema = z.object({
@@ -74,7 +84,7 @@ r.post("/signup", async (req, res) => {
     });
   }
 
-  const { email, password, name } = parsed.data;
+  const { email, password, name, username } = parsed.data;
 
   // Enforce strong password (policy + zxcvbn)
   {
@@ -93,7 +103,12 @@ r.post("/signup", async (req, res) => {
     if (existing) return res.status(409).json({ error: "email_already_in_use" });
 
     const passwordHash = await bcrypt.hash(password, 10);
-    const user = await User.create({ email, name: name.trim(), passwordHash });
+    const user = await User.create({
+      email,
+      name: name.trim(),
+      passwordHash,
+      ...(username ? { username } : {}),
+    });
 
     const authToken = signToken(String(user._id), (user as any).tokenVersion ?? 0);
 
@@ -136,7 +151,12 @@ r.post("/signup", async (req, res) => {
       .json({ token: authToken, user: { id: user._id, email: user.email, name: user.name } });
   } catch (err: any) {
     if (err?.code === 11000) {
-      return res.status(409).json({ error: "email_already_in_use" });
+      if (err?.keyPattern?.email) {
+        return res.status(409).json({ error: "email_already_in_use" });
+      }
+      if (err?.keyPattern?.username) {
+        return res.status(409).json({ error: "username_already_in_use" });
+      }
     }
     console.error("Signup error:", err);
     return res.status(500).json({ error: "internal_error" });
@@ -205,7 +225,7 @@ r.post("/login", async (req, res) => {
       .cookie("token", token, tokenCookieOptions)
       .json({
         token,
-        user: { id: user._id, email: user.email, name: user.name },
+        user: { id: user._id, email: user.email, name: user.name, username: (user as any).username },
       });
   } catch (err) {
     console.error("Login error:", err);
