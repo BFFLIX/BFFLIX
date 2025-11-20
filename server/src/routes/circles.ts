@@ -18,6 +18,8 @@ const paged = z.object({
   limit: z.coerce.number().min(1).max(50).default(20),
 });
 
+const escapeRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
 //Moderator Validators (isOwner/isMod/isBoth)
 async function isOwner(circleId: string, userId: string): Promise<boolean> {
   const circle = await Circle.findById(circleId).select("createdBy").lean();
@@ -155,12 +157,57 @@ r.get("/:id", requireAuth, async (req: AuthedRequest, res) => {
   if (!idCheck.success) return res.status(400).json({ error: "Invalid id" });
 
   const circle = await Circle.findOne({ _id: idCheck.data, members: req.user!.id })
-    .select("name description visibility createdBy members createdAt updatedAt")
+    .select("name description visibility createdBy members moderators inviteCode createdAt updatedAt")
     .populate("members", "name email")
     .lean({ virtuals: true });
 
   if (!circle) return res.status(404).json({ error: "Circle not found or access denied" });
-  res.json(circle);
+
+  const ownerId = circle.createdBy?.toString?.() ?? String(circle.createdBy);
+  const viewerIsOwner = ownerId === req.user!.id;
+  const moderators = Array.isArray(circle.moderators)
+    ? circle.moderators.map((m: any) => String(m))
+    : [];
+  const viewerIsModerator = viewerIsOwner || moderators.includes(req.user!.id);
+
+  const members = Array.isArray(circle.members)
+    ? circle.members.map((member: any) => {
+        const memberId = String(member?.id || member?._id || member);
+        const isOwner = memberId === ownerId;
+        const isModerator = moderators.includes(memberId);
+        return {
+          id: memberId,
+          name: member?.name || "Member",
+          email: member?.email,
+          isOwner,
+          isModerator,
+          role: isOwner ? "owner" : isModerator ? "moderator" : "member",
+        };
+      })
+    : [];
+
+  const payload: any = {
+    id: circle.id ?? String(circle._id),
+    name: circle.name,
+    description: circle.description,
+    visibility: circle.visibility,
+    createdBy: ownerId,
+    createdAt: circle.createdAt,
+    updatedAt: circle.updatedAt,
+    members,
+    permissions: {
+      isOwner: viewerIsOwner,
+      isModerator: viewerIsModerator && !viewerIsOwner,
+      canInvite: viewerIsOwner || viewerIsModerator,
+      canPromote: viewerIsOwner,
+    },
+  };
+
+  if (circle.visibility === "private" && (viewerIsOwner || viewerIsModerator)) {
+    payload.inviteCode = circle.inviteCode ?? null;
+  }
+
+  res.json(payload);
 });
 
 // ---------- Join a circle ----------
@@ -349,9 +396,15 @@ r.delete("/:id", requireAuth, async (req: AuthedRequest, res) => {
 // ==================== INVITATIONS ====================
 
 // ---------- Send invitation ----------
-const inviteSchema = z.object({
-  userId: objectId,
-});
+const inviteSchema = z
+  .object({
+    userId: objectId.optional(),
+    usernameOrEmail: z.string().min(2).max(120).trim().optional(),
+  })
+  .refine(
+    (data) => Boolean(data.userId || data.usernameOrEmail),
+    { message: "user_identifier_required" }
+  );
 
 r.post("/:id/invite", requireAuth, async (req: AuthedRequest, res) => {
   const idCheck = objectId.safeParse(req.params.id);
@@ -367,16 +420,37 @@ r.post("/:id/invite", requireAuth, async (req: AuthedRequest, res) => {
   const circle = await Circle.findById(idCheck.data);
   if (!circle) return res.status(404).json({ error: "Circle not found" });
 
-  const user = await User.findById(parsed.data.userId);
-  if (!user) return res.status(404).json({ error: "User not found" });
+  let targetUserId = parsed.data.userId;
+  let user = null;
 
-  if (circle.members.some(m => m.toString() === parsed.data.userId)) {
+  if (targetUserId) {
+    user = await User.findById(targetUserId).select("_id");
+  } else if (parsed.data.usernameOrEmail) {
+    const lookup = parsed.data.usernameOrEmail.trim();
+    const regex = new RegExp(`^${escapeRegex(lookup)}$`, "i");
+    user = await User.findOne({
+      $or: [{ email: lookup.toLowerCase() }, { name: { $regex: regex } }],
+    }).select("_id name email");
+    if (user) {
+      targetUserId = user.id;
+    }
+  }
+
+  if (!user || !targetUserId) {
+    return res.status(404).json({ error: "User not found" });
+  }
+
+  if (targetUserId === req.user!.id) {
+    return res.status(400).json({ error: "You cannot invite yourself" });
+  }
+
+  if (circle.members.some(m => m.toString() === targetUserId)) {
     return res.status(400).json({ error: "User is already a member" });
   }
 
   const existingInvite = await CircleInvitation.findOne({
     circleId: idCheck.data,
-    inviteeId: parsed.data.userId,
+    inviteeId: targetUserId,
     status: "pending",
   });
 
@@ -386,7 +460,7 @@ r.post("/:id/invite", requireAuth, async (req: AuthedRequest, res) => {
 
   const invitation = await CircleInvitation.create({
     circleId: idCheck.data,
-    inviteeId: parsed.data.userId,
+    inviteeId: targetUserId,
     invitedBy: req.user!.id,
     status: "pending",
   });
