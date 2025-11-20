@@ -170,7 +170,7 @@ function toText(html: string) {
 }
 
 /* ------------------------------- Templates -------------------------------- */
-const appBase = process.env.APP_BASE_URL || "http://localhost:5173";
+const appBase = process.env.APP_BASE_URL || "https://bfflix.com";
 
 function escapeHtml(s: string) {
   return s
@@ -225,7 +225,35 @@ function resetHtml(resetUrl: string, name?: string) {
   `.trim();
 }
 
+function verifyHtml(verifyUrl: string, code: string, name?: string) {
+  const who = name ? `, ${escapeHtml(name)}` : "";
+  const safeCode = escapeHtml(code);
+  return `
+  <div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;line-height:1.45;color:#111;background:#fff;padding:0 16px">
+    <div style="max-width:560px;margin:32px auto;border:1px solid #eee;border-radius:10px;overflow:hidden">
+      <div style="padding:20px 24px;background:#0b0f19;color:#fff">
+        <h1 style="margin:0;font-size:20px">Verify your BFFlix account${who}</h1>
+      </div>
+      <div style="padding:24px">
+        <p style="margin:0 0 12px">Welcome to BFFlix! Please verify your email to activate your account.</p>
+        <p style="margin:0 0 16px">
+          <a href="${verifyUrl}" style="display:inline-block;padding:10px 16px;background:#111;color:#fff;text-decoration:none;border-radius:8px">Verify Email</a>
+        </p>
+        <p style="margin:0 0 16px">Or enter this verification code in the app:</p>
+        <p style="margin:0 0 20px;font-size:18px;font-weight:600;letter-spacing:0.12em">${safeCode}</p>
+        <p style="margin:0;color:#666">If you didn't create this account, you can ignore this email.</p>
+      </div>
+    </div>
+    <p style="text-align:center;color:#888;font-size:12px;margin:16px 0">© ${new Date().getFullYear()} BFFlix</p>
+  </div>
+  `.trim();
+}
+
 /* ------------------------------ High-level API ---------------------------- */
+/**
+ * @deprecated Use sendVerificationEmail instead.
+ * Signup should only call sendVerificationEmail (one email).
+ */
 export async function sendWelcomeEmail(to: string, name?: string) {
   const html = welcomeHtml(name);
   const asm = process.env.SENDGRID_GROUP_ID ? Number(process.env.SENDGRID_GROUP_ID) : undefined;
@@ -248,6 +276,24 @@ export async function sendPasswordResetEmail(to: string, resetUrl: string, name?
     subject: "Reset your BFFlix password",
     html,
     category: "password_reset",
+    ...(asm != null ? { asmGroupId: asm } : {}),
+  });
+}
+
+export async function sendVerificationEmail(
+  to: string,
+  verifyUrl: string,
+  code: string,
+  name?: string
+) {
+  const html = verifyHtml(verifyUrl, code, name);
+  const asm = process.env.SENDGRID_GROUP_ID ? Number(process.env.SENDGRID_GROUP_ID) : undefined;
+
+  return sendEmail({
+    to,
+    subject: "Verify your BFFlix account",
+    html,
+    category: "email_verification",
     ...(asm != null ? { asmGroupId: asm } : {}),
   });
 }
