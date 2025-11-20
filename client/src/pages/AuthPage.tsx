@@ -152,14 +152,13 @@ export default function AuthPage() {
 
     setIsLoading(true);
 
-    try {
-      if (isLogin) {
-        // LOGIN FLOW
+    if (isLogin) {
+      // LOGIN FLOW
+      try {
         const payload: Record<string, any> = { email, password };
         const data = await apiPost<AuthResponse>("/auth/login", payload);
 
-        // If backend allows login only when verified,
-        // we should never reach this if email is not verified.
+        // Persist token in localStorage as a backup
         try {
           window.localStorage.setItem("bfflix_token", data.token);
         } catch {
@@ -167,8 +166,34 @@ export default function AuthPage() {
         }
 
         navigate("/home");
-      } else {
-        // SIGNUP FLOW
+      } catch (err: any) {
+        const raw = err?.message || "";
+
+        // Handle unverified email error from backend login
+        if (
+          raw === "email_not_verified" ||
+          raw === "unverified_email" ||
+          raw === "email_not_confirmed"
+        ) {
+          setPendingVerificationEmail(email);
+          setShowVerifyModal(true);
+          setInfoMessage(
+            "We emailed you a 6-digit verification code. Enter it below to verify your account."
+          );
+          setError(null);
+        } else {
+          const msg =
+            raw === "missing_token"
+              ? "Login worked, but your browser blocked the session cookie. Please enable cookies for BFFlix or try another browser."
+              : raw || "Something went wrong. Please try again.";
+          setError(msg);
+        }
+      } finally {
+        setIsLoading(false);
+      }
+    } else {
+      // SIGNUP FLOW
+      try {
         const fullName = `${firstName} ${lastName}`.trim();
         const payload: Record<string, any> = {
           email,
@@ -189,33 +214,15 @@ export default function AuthPage() {
         setInfoMessage(
           "Account created. Please check your email for a 6-digit verification code before signing in."
         );
+      } catch (err: any) {
+        const raw = err?.message || "";
+        const msg =
+          raw ||
+          "Something went wrong while creating your account. Please try again.";
+        setError(msg);
+      } finally {
+        setIsLoading(false);
       }
-    } catch (err: any) {
-      const raw = err?.message || "";
-
-      // Handle unverified email error from backend login
-      if (
-        isLogin &&
-        (raw === "email_not_verified" ||
-          raw === "unverified_email" ||
-          raw === "email_not_confirmed")
-      ) {
-        setPendingVerificationEmail(email);
-        setShowVerifyModal(true);
-        setInfoMessage(
-          "We emailed you a 6-digit verification code. Enter it below to verify your account."
-        );
-        setError(null);
-        return;
-      }
-
-      const msg =
-        raw === "missing_token"
-          ? "Login worked, but your browser blocked the session cookie. Please enable cookies for BFFlix or try another browser."
-          : raw || "Something went wrong. Please try again.";
-      setError(msg);
-    } finally {
-      setIsLoading(false);
     }
   }
 
