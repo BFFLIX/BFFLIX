@@ -176,7 +176,7 @@ r.get("/:id", requireAuth, async (req: AuthedRequest, res) => {
 
   const circle = await Circle.findOne({ _id: idCheck.data, members: req.user!.id })
     .select("name description visibility createdBy members moderators inviteCode createdAt updatedAt")
-    .populate("members", "name email")
+    .populate("members", "name email username")
     .lean({ virtuals: true });
 
   if (!circle) return res.status(404).json({ error: "Circle not found or access denied" });
@@ -197,6 +197,7 @@ r.get("/:id", requireAuth, async (req: AuthedRequest, res) => {
           id: memberId,
           name: member?.name || "Member",
           email: member?.email,
+          username: member?.username,
           isOwner,
           isModerator,
           role: isOwner ? "owner" : isModerator ? "moderator" : "member",
@@ -205,7 +206,7 @@ r.get("/:id", requireAuth, async (req: AuthedRequest, res) => {
     : [];
 
   const payload: any = {
-    id: circle.id ?? String(circle._id),
+    id: String(circle._id),
     name: circle.name,
     description: circle.description,
     visibility: circle.visibility,
@@ -444,14 +445,18 @@ r.post("/:id/invite", requireAuth, async (req: AuthedRequest, res) => {
   if (targetUserId) {
     user = await User.findById(targetUserId).select("_id");
   } else if (parsed.data.usernameOrEmail) {
-    const lookup = parsed.data.usernameOrEmail.trim();
-    const regex = new RegExp(`^${escapeRegex(lookup)}$`, "i");
+    const lookupRaw = parsed.data.usernameOrEmail.trim();
+    const usernameCandidate = lookupRaw.startsWith("@") ? lookupRaw.slice(1) : lookupRaw;
+    const normalizedLookup = usernameCandidate.toLowerCase();
+    const regex = new RegExp(`^${escapeRegex(lookupRaw)}$`, "i");
     user = await User.findOne({
-      $or: [{ email: lookup.toLowerCase() }, { name: { $regex: regex } }],
-    }).select("_id name email");
-    if (user) {
-      targetUserId = user.id;
-    }
+      $or: [
+        { email: lookupRaw.toLowerCase() },
+        { username: normalizedLookup },
+        { name: { $regex: regex } },
+      ],
+    }).select("_id name email username");
+    if (user) targetUserId = user.id;
   }
 
   if (!user || !targetUserId) {
@@ -643,7 +648,7 @@ r.get("/:id/members", requireAuth, async (req: AuthedRequest, res) => {
   const memberIds = circle.members.slice(skip, skip + limit);
 
   const members = await User.find({ _id: { $in: memberIds } })
-    .select("_id name email")
+    .select("_id name email username")
     .lean();
 
   const ownerId = normalizeId(circle.createdBy);
@@ -654,6 +659,7 @@ r.get("/:id/members", requireAuth, async (req: AuthedRequest, res) => {
       ...member,
       isOwner: ownerId === memberId,
       isModerator,
+      username: member.username,
     };
   });
 
