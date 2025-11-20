@@ -74,6 +74,12 @@ const requestVerificationSchema = z.object({
   name: z.string().trim().min(1),
 });
 
+const verifyEmailSchema = z.object({
+  token: z.string().optional(),
+  code: z.string().optional(),
+  email: z.string().email().transform(normEmail).optional(),
+});
+
 // ---------- Signup ----------
 r.post("/signup", async (req, res) => {
   const parsed = signupSchema.safeParse(req.body);
@@ -110,8 +116,6 @@ r.post("/signup", async (req, res) => {
       ...(username ? { username } : {}),
     });
 
-    const authToken = signToken(String(user._id), (user as any).tokenVersion ?? 0);
-
     // Fire-and-forget: create verification token + 6 digit code and send welcome + verification email.
     (async () => {
       try {
@@ -145,10 +149,7 @@ r.post("/signup", async (req, res) => {
       }
     })();
 
-    return res
-      .cookie("token", authToken, tokenCookieOptions)
-      .status(201)
-      .json({ token: authToken, user: { id: user._id, email: user.email, name: user.name } });
+    return res.status(201).json({ ok: true, user: { id: user._id, email: user.email, name: user.name } });
   } catch (err: any) {
     if (err?.code === 11000) {
       if (err?.keyPattern?.email) {
@@ -210,6 +211,10 @@ r.post("/login", async (req, res) => {
 
       await user.save();
       return res.status(401).json({ error: "invalid_credentials" });
+    }
+
+    if (!(user as any).isVerified) {
+      return res.status(403).json({ error: "email_not_verified" });
     }
 
     // On success: clear counters and lock
@@ -363,7 +368,7 @@ r.post("/request-verification", async (req, res) => {
     const verifyUrl = `https://bfflix.com/verify/${token}`;
 
     try {
-      // Update sendVerificationEmail signature to accept (email, verifyUrl, code, name)
+      // sendVerificationEmail(email, verifyUrl, code, name)
       await sendVerificationEmail(email, verifyUrl, code, name);
     } catch (e) {
       console.error("Verification email failed:", e);
@@ -373,6 +378,85 @@ r.post("/request-verification", async (req, res) => {
   } catch (err) {
     console.error("Request verification error:", err);
     return res.status(500).json({ error: "could_not_send" });
+  }
+});
+
+// ---------- Verify email using token or code ----------
+r.post("/verify-email", async (req, res) => {
+  const parsed = verifyEmailSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({
+      error: "validation_error",
+      details: parsed.error.flatten().fieldErrors,
+    });
+  }
+
+  const { token, code, email } = parsed.data;
+
+  try {
+    let verification: any = null;
+
+    if (token) {
+      // Case A: magic link
+      const tokenHash = crypto
+        .createHash("sha256")
+        .update(token)
+        .digest("hex");
+
+      verification = await EmailVerification.findOne({
+        tokenHash,
+        usedAt: null,
+        expiresAt: { $gt: new Date() },
+      });
+    } else if (code && email) {
+      // Case B: 6-digit code + email
+      const user = await User.findOne({ email }).select("_id");
+      if (!user) {
+        return res.status(400).json({ error: "invalid_or_expired_token" });
+      }
+
+      const codeHash = crypto
+        .createHash("sha256")
+        .update(code)
+        .digest("hex");
+
+      verification = await EmailVerification.findOne({
+        userId: user._id,
+        codeHash,
+        usedAt: null,
+        expiresAt: { $gt: new Date() },
+      });
+    } else {
+      return res.status(400).json({ error: "token_or_code_required" });
+    }
+
+    if (!verification) {
+      return res.status(400).json({ error: "invalid_or_expired_token" });
+    }
+
+    const user = await User.findById(verification.userId);
+    if (!user) {
+      return res.status(400).json({ error: "invalid_or_expired_token" });
+    }
+
+    // If already verified, mark this verification as used and return ok
+    if ((user as any).isVerified) {
+      verification.usedAt = new Date();
+      await verification.save();
+      return res.json({ ok: true, alreadyVerified: true });
+    }
+
+    // Mark user as verified
+    (user as any).isVerified = true;
+    await user.save();
+
+    verification.usedAt = new Date();
+    await verification.save();
+
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error("Verify email error:", err);
+    return res.status(500).json({ error: "internal_error" });
   }
 });
 

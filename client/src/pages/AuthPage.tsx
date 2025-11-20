@@ -14,6 +14,8 @@ interface AuthResponse {
     id: string;
     email: string;
     name?: string;
+    isVerified?: boolean;
+    emailVerified?: boolean;
   };
 }
 
@@ -158,7 +160,9 @@ export default function AuthPage() {
         const payload: Record<string, any> = { email, password };
         const data = await apiPost<AuthResponse>("/auth/login", payload);
 
-        // Persist token in localStorage as a backup
+        // Login success implies the backend has already ensured the user is verified.
+        // If the user is not verified, the backend should respond with an error
+        // (e.g., "email_not_verified"), which we handle in the catch block below.
         try {
           window.localStorage.setItem("bfflix_token", data.token);
         } catch {
@@ -169,7 +173,7 @@ export default function AuthPage() {
       } catch (err: any) {
         const raw = err?.message || "";
 
-        // Handle unverified email error from backend login
+        // Handle unverified email error from backend login as a fallback
         if (
           raw === "email_not_verified" ||
           raw === "unverified_email" ||
@@ -184,7 +188,7 @@ export default function AuthPage() {
         } else {
           const msg =
             raw === "missing_token"
-              ? "Login worked, but your browser blocked the session cookie. Please enable cookies for BFFlix or try another browser."
+              ? "Login worked but your browser blocked the session cookie. Please enable cookies for BFFlix or try another browser."
               : raw || "Something went wrong. Please try again.";
           setError(msg);
         }
