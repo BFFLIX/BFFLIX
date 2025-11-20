@@ -5,6 +5,7 @@ import { z } from "zod";
 import { Types } from "mongoose";
 import Post from "../models/Post";
 import Circle from "../models/Circles/Circle";
+import User from "../models/user";
 import { requireAuth, AuthedRequest } from "../middleware/auth";
 import { validateBody, validateQuery, validateParams } from "../middleware/validate";
 import { asyncHandler } from "../middleware/asyncHandler";
@@ -19,6 +20,60 @@ const pagedQuery = z.object({
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(50).default(20),
 });
+
+type LeanPost = Record<string, any>;
+
+async function attachAuthorProfiles(posts: LeanPost[]): Promise<LeanPost[]> {
+  if (!posts.length) return posts;
+
+  const authorIds = Array.from(
+    new Set(
+      posts
+        .map((p) => (p.authorId ? String(p.authorId) : ""))
+        .filter((id): id is string => Boolean(id))
+    )
+  );
+
+  if (!authorIds.length) {
+    return posts.map((post) => ({
+      ...post,
+      authorId: post.authorId ? String(post.authorId) : undefined,
+    }));
+  }
+
+  const authors = await User.find({ _id: { $in: authorIds } })
+    .select("_id name avatarUrl")
+    .lean();
+
+  const profileMap = new Map<string, { name: string; avatarUrl?: string }>();
+  authors.forEach((user: any) => {
+    const safeName =
+      typeof user.name === "string" && user.name.trim().length
+        ? user.name.trim()
+        : "Someone";
+    const avatar =
+      typeof user.avatarUrl === "string" ? user.avatarUrl.trim() : "";
+    profileMap.set(String(user._id), {
+      name: safeName,
+      avatarUrl: avatar || undefined,
+    });
+  });
+
+  return posts.map((post) => {
+    const key = post.authorId ? String(post.authorId) : "";
+    const profile = key ? profileMap.get(key) : undefined;
+    const fallbackName =
+      (typeof post.authorName === "string" && post.authorName.trim()) ||
+      "Someone";
+
+    return {
+      ...post,
+      authorId: key || undefined,
+      authorName: profile?.name || fallbackName,
+      authorAvatarUrl: profile?.avatarUrl,
+    };
+  });
+}
 
 // -------------------- Create --------------------
 const createSchema = z
@@ -118,7 +173,9 @@ r.get(
       .limit(limit)
       .lean();
 
-    res.json({ page, limit, items });
+    const enrichedItems = await attachAuthorProfiles(items);
+
+    res.json({ page, limit, items: enrichedItems });
   })
 );
 
@@ -136,7 +193,9 @@ r.get(
       .limit(limit)
       .lean();
 
-    res.json({ page, limit, items });
+    const enrichedItems = await attachAuthorProfiles(items);
+
+    res.json({ page, limit, items: enrichedItems });
   })
 );
 
