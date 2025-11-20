@@ -364,7 +364,7 @@ const ViewingsPage: FC = () => {
 
   return (
     <div className="min-h-screen flex flex-col bg-[radial-gradient(circle_at_top,_#1f1632_0,_#050311_55%,_#020008_100%)] text-slate-50">
-      <TopBar showName={true} />
+      <TopBar />
 
       <div className="flex flex-1">
         <LeftSidebar />

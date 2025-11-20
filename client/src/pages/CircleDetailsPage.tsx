@@ -2,11 +2,27 @@
 // src/pages/CircleDetailsPage.tsx
 import { useEffect, useMemo, useState, useCallback } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { apiGet } from "../lib/api";
+import { apiDelete, apiGet, apiPost } from "../lib/api";
 import LeftSidebar from "../components/LeftSidebar";
 import TopBar from "../components/TopBar";
 
-type Member = { id: string; name: string; email?: string };
+type MemberRole = "owner" | "moderator" | "member";
+
+type Member = {
+  id: string;
+  name: string;
+  email?: string;
+  role: MemberRole;
+  isOwner?: boolean;
+  isModerator?: boolean;
+};
+
+type CirclePermissions = {
+  isOwner: boolean;
+  isModerator: boolean;
+  canInvite: boolean;
+  canPromote: boolean;
+};
 
 type CircleDetail = {
   id: string;
@@ -16,6 +32,8 @@ type CircleDetail = {
   members: Member[];
   createdBy?: string;
   createdAt?: string;
+  inviteCode?: string | null;
+  permissions?: CirclePermissions;
 };
 
 type FeedPost = {
@@ -42,11 +60,21 @@ const CircleDetailsPage = () => {
   const [posts, setPosts] = useState<FeedPost[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [inviteModalOpen, setInviteModalOpen] = useState(false);
+  const [inviteIdentifier, setInviteIdentifier] = useState("");
+  const [inviteSubmitting, setInviteSubmitting] = useState(false);
+  const [inviteError, setInviteError] = useState<string | null>(null);
+  const [inviteFeedback, setInviteFeedback] = useState<string | null>(null);
+  const [copyStatus, setCopyStatus] = useState<string | null>(null);
+  const [modActionMemberId, setModActionMemberId] = useState<string | null>(null);
+  const [memberActionError, setMemberActionError] = useState<string | null>(null);
+  const [inviteLinkLoading, setInviteLinkLoading] = useState(false);
 
   const fetchAll = useCallback(async () => {
     if (!id) return;
     setLoading(true);
     setError(null);
+    setMemberActionError(null);
 
     try {
       const detail = await apiGet<any>(`/circles/${id}`);
@@ -56,6 +84,16 @@ const CircleDetailsPage = () => {
             id: String(m?.id || m?._id || m),
             name: m?.name || "Member",
             email: m?.email,
+            role:
+              m?.role === "owner" || m?.role === "moderator"
+                ? (m.role as MemberRole)
+                : m?.isOwner
+                ? "owner"
+                : m?.isModerator
+                ? "moderator"
+                : "member",
+            isOwner: Boolean(m?.isOwner || m?.role === "owner"),
+            isModerator: Boolean(m?.isModerator || m?.role === "moderator"),
           }))
         : [];
 
@@ -67,6 +105,15 @@ const CircleDetailsPage = () => {
         members,
         createdBy: detail?.createdBy ? String(detail.createdBy) : undefined,
         createdAt: detail?.createdAt,
+        inviteCode:
+          typeof detail?.inviteCode === "string" ? detail.inviteCode : detail?.inviteCode ?? null,
+        permissions:
+          detail?.permissions ?? {
+            isOwner: false,
+            isModerator: false,
+            canInvite: false,
+            canPromote: false,
+          },
       });
 
       const feed = await apiGet<any>(`/posts/circle/${id}?page=1&limit=50`);
@@ -166,12 +213,116 @@ const CircleDetailsPage = () => {
     fetchAll();
   }, [fetchAll]);
 
-  const memberList = useMemo(() => circle?.members || [], [circle]);
+  const memberList = useMemo(() => {
+    if (!circle?.members) return [];
+    const clone = [...circle.members];
+    const rank = (member: Member) =>
+      member.role === "owner" ? 0 : member.role === "moderator" ? 1 : 2;
+    clone.sort((a, b) => {
+      const diff = rank(a) - rank(b);
+      if (diff !== 0) return diff;
+      const nameA = a.name?.toLowerCase() ?? "";
+      const nameB = b.name?.toLowerCase() ?? "";
+      if (nameA < nameB) return -1;
+      if (nameA > nameB) return 1;
+      return 0;
+    });
+    return clone;
+  }, [circle]);
+
+  const inviteLink = useMemo(() => {
+    if (!circle || !circle.id) return "";
+    const origin = typeof window !== "undefined" ? window.location.origin : "";
+    if (!origin) return "";
+    if (circle.visibility === "private") {
+      if (!circle.inviteCode) return "";
+      return `${origin}/circle-invite/${circle.id}/${circle.inviteCode}`;
+    }
+    return `${origin}/circles/${circle.id}`;
+  }, [circle]);
+
+  const handleSendInvite = useCallback(async () => {
+    if (!id) return;
+    if (!inviteIdentifier.trim()) {
+      setInviteError("Enter a username or email");
+      return;
+    }
+
+    try {
+      setInviteSubmitting(true);
+      setInviteError(null);
+      setInviteFeedback(null);
+      await apiPost(`/circles/${id}/invite`, {
+        usernameOrEmail: inviteIdentifier.trim(),
+      });
+      setInviteFeedback("Invitation sent!");
+      setInviteIdentifier("");
+    } catch (err: any) {
+      setInviteError(err?.message || "Unable to send invite");
+    } finally {
+      setInviteSubmitting(false);
+    }
+  }, [id, inviteIdentifier]);
+
+  const handleCopyInviteLink = useCallback(async () => {
+    if (!inviteLink) return;
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(inviteLink);
+      } else {
+        const textarea = document.createElement("textarea");
+        textarea.value = inviteLink;
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand("copy");
+        document.body.removeChild(textarea);
+      }
+      setCopyStatus("Invite link copied!");
+      setTimeout(() => setCopyStatus(null), 2000);
+    } catch {
+      setCopyStatus("Unable to copy link");
+    }
+  }, [inviteLink]);
+
+  const handleRefreshInviteLink = useCallback(async () => {
+    if (!id) return;
+    try {
+      setInviteLinkLoading(true);
+      await apiPost(`/circles/${id}/rotate-invite`, {});
+      await fetchAll();
+      setCopyStatus("Invite link refreshed");
+      setTimeout(() => setCopyStatus(null), 2000);
+    } catch (err: any) {
+      setInviteError(err?.message || "Unable to refresh invite link");
+    } finally {
+      setInviteLinkLoading(false);
+    }
+  }, [id, fetchAll]);
+
+  const handleToggleModerator = async (member: Member) => {
+    if (!id || !circle?.permissions?.canPromote || member.isOwner) return;
+
+    try {
+      setModActionMemberId(member.id);
+      setMemberActionError(null);
+      if (member.isModerator) {
+        await apiDelete(`/circles/${id}/mods/${member.id}`);
+      } else {
+        await apiPost(`/circles/${id}/mods/${member.id}`, {});
+      }
+      await fetchAll();
+    } catch (err: any) {
+      setMemberActionError(err?.message || "Unable to update member");
+    } finally {
+      setModActionMemberId(null);
+    }
+  };
 
   return (
-    <div className="min-h-screen text-slate-50 flex flex-col">
-      {/* Top bar (global) */}
-      <TopBar />
+    <>
+      <div className="min-h-screen text-slate-50 flex flex-col">
+        {/* Top bar (global) */}
+        <TopBar />
 
       <div className="flex flex-1">
         {/* Left sidebar (global) */}
@@ -263,14 +414,34 @@ const CircleDetailsPage = () => {
                 <div className="grid gap-6 lg:grid-cols-3">
                   {/* Members panel */}
                   <section className="rounded-2xl border border-white/5 bg-slate-950/60 px-4 py-4 md:px-5 md:py-5 shadow-[0_0_40px_rgba(0,0,0,0.7)] lg:col-span-1">
-                    <div className="flex items-center justify-between mb-4">
-                      <h2 className="text-sm font-semibold tracking-wide text-slate-200 uppercase">
-                        Members
-                      </h2>
-                      <span className="text-xs text-slate-400">
-                        {memberList.length} total
-                      </span>
+                    <div className="flex items-center justify-between mb-4 gap-2">
+                      <div>
+                        <h2 className="text-sm font-semibold tracking-wide text-slate-200 uppercase">
+                          Members
+                        </h2>
+                        <span className="text-xs text-slate-500">
+                          {memberList.length} total
+                        </span>
+                      </div>
+                      {circle?.permissions?.canInvite && (
+                        <button
+                          type="button"
+                          className="px-3 py-1.5 rounded-full bg-gradient-to-r from-pink-500 to-red-500 text-white text-xs font-semibold shadow hover:brightness-110 transition"
+                          onClick={() => {
+                            setInviteModalOpen(true);
+                            setInviteError(null);
+                            setInviteFeedback(null);
+                            setCopyStatus(null);
+                          }}
+                        >
+                          Invite
+                        </button>
+                      )}
                     </div>
+
+                    {memberActionError && (
+                      <div className="mb-2 text-xs text-red-400">{memberActionError}</div>
+                    )}
 
                     {memberList.length === 0 ? (
                       <div className="text-sm text-slate-400">
@@ -281,21 +452,50 @@ const CircleDetailsPage = () => {
                         {memberList.map((m) => (
                           <div
                             key={m.id}
-                            className="flex items-center gap-3 rounded-xl border border-white/5 bg-white/5/10 px-3 py-2.5"
+                            className="flex items-center justify-between gap-3 rounded-xl border border-white/5 bg-white/5/10 px-3 py-2.5"
                           >
-                            <div className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-pink-500 to-red-500 text-sm font-semibold">
-                              {m.name?.[0]?.toUpperCase() || "?"}
-                            </div>
-                            <div className="flex flex-col">
-                              <span className="text-sm font-medium text-slate-50">
-                                {m.name}
-                              </span>
-                              {m.email && (
-                                <span className="text-xs text-slate-400">
-                                  {m.email}
+                            <div className="flex items-center gap-3">
+                              <div className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-pink-500 to-red-500 text-sm font-semibold">
+                                {m.name?.[0]?.toUpperCase() || "?"}
+                              </div>
+                              <div className="flex flex-col">
+                                <span className="text-sm font-medium text-slate-50">
+                                  {m.name}
                                 </span>
-                              )}
+                                {m.email && (
+                                  <span className="text-xs text-slate-400">
+                                    {m.email}
+                                  </span>
+                                )}
+                                <div className="mt-1 flex flex-wrap gap-1">
+                                  <span
+                                    className={`text-[11px] uppercase tracking-wide px-2 py-0.5 rounded-full border ${
+                                      m.isOwner
+                                        ? "bg-amber-500/20 border-amber-400/30 text-amber-200"
+                                        : m.isModerator
+                                        ? "bg-indigo-500/20 border-indigo-400/30 text-indigo-100"
+                                        : "bg-slate-800 border-slate-700 text-slate-300"
+                                    }`}
+                                  >
+                                    {m.isOwner ? "Owner" : m.isModerator ? "Moderator" : "Member"}
+                                  </span>
+                                </div>
+                              </div>
                             </div>
+                            {circle?.permissions?.canPromote && !m.isOwner && (
+                              <button
+                                type="button"
+                                className="text-xs font-semibold px-3 py-1 rounded-full border border-white/10 text-slate-200 hover:bg-white/10 transition disabled:opacity-60"
+                                disabled={modActionMemberId === m.id}
+                                onClick={() => handleToggleModerator(m)}
+                              >
+                                {modActionMemberId === m.id
+                                  ? "Saving..."
+                                  : m.isModerator
+                                  ? "Remove mod"
+                                  : "Make mod"}
+                              </button>
+                            )}
                           </div>
                         ))}
                       </div>
@@ -430,6 +630,108 @@ const CircleDetailsPage = () => {
         </main>
       </div>
     </div>
+
+      {inviteModalOpen && (
+        <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/70 px-4">
+          <div className="w-full max-w-lg rounded-3xl border border-white/10 bg-slate-950/90 p-6 shadow-2xl">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h3 className="text-xl font-semibold text-white">Invite members</h3>
+                <p className="mt-1 text-sm text-slate-400">
+                  Send an invite by username/email or share an invite link.
+                </p>
+              </div>
+              <button
+                type="button"
+                className="text-slate-400 hover:text-white transition"
+                onClick={() => setInviteModalOpen(false)}
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="mt-5 space-y-2">
+              <label className="text-xs uppercase tracking-wide text-slate-400">
+                Username or email
+              </label>
+              <input
+                type="text"
+                className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-pink-500/70"
+                placeholder="ex: test@example.com or Test User"
+                value={inviteIdentifier}
+                onChange={(e) => setInviteIdentifier(e.target.value)}
+              />
+            </div>
+            {inviteError && (
+              <div className="mt-2 text-sm text-red-400">{inviteError}</div>
+            )}
+            {inviteFeedback && (
+              <div className="mt-2 text-sm text-emerald-400">{inviteFeedback}</div>
+            )}
+
+            {circle?.permissions?.canInvite && (
+              <div className="mt-6 space-y-2">
+                <div className="text-xs uppercase tracking-wide text-slate-400">
+                  Invite link
+                </div>
+                <div className="flex flex-col gap-2">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      className="flex-1 rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white focus:outline-none"
+                      value={
+                        inviteLink ||
+                        "Generate a link to share this circle with others."
+                      }
+                      readOnly
+                    />
+                    <button
+                      type="button"
+                      className="px-3 py-2 rounded-full bg-white/10 text-xs font-semibold text-white hover:bg-white/20 disabled:opacity-40"
+                      onClick={handleCopyInviteLink}
+                      disabled={!inviteLink}
+                    >
+                      Copy
+                    </button>
+                  </div>
+                  {circle.permissions?.isOwner && circle.visibility === "private" && (
+                    <button
+                      type="button"
+                      className="self-start text-xs text-slate-400 hover:text-white"
+                      onClick={handleRefreshInviteLink}
+                      disabled={inviteLinkLoading}
+                    >
+                      {inviteLinkLoading ? "Refreshing link..." : "Generate new link"}
+                    </button>
+                  )}
+                  {copyStatus && (
+                    <div className="text-xs text-emerald-400">{copyStatus}</div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            <div className="mt-8 flex justify-end gap-3">
+              <button
+                type="button"
+                className="px-4 py-2 rounded-full bg-white/5 text-sm text-slate-200 border border-white/10 hover:bg-white/10"
+                onClick={() => setInviteModalOpen(false)}
+              >
+                Close
+              </button>
+              <button
+                type="button"
+                className="px-4 py-2 rounded-full bg-gradient-to-r from-pink-500 to-red-500 text-white text-sm font-semibold shadow hover:brightness-110 disabled:opacity-60"
+                onClick={handleSendInvite}
+                disabled={inviteSubmitting}
+              >
+                {inviteSubmitting ? "Sending..." : "Send invite"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 };
 
