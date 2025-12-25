@@ -227,7 +227,9 @@ r.get(
       circleNameMap.set(String(doc._id), doc.name || "Circle");
     });
 
-    const memoMeta = new Map<string, { title: string; year?: number; poster?: string }>();
+    type MediaMeta = { title: string; year?: number; poster?: string };
+
+    const memoMeta = new Map<string, MediaMeta>();
     const memoProviders = new Map<string, string[]>();
 
     const fetchMeta = async (type: "movie" | "tv", tmdbId: string) => {
@@ -237,26 +239,46 @@ r.get(
       try {
         if (type === "movie") {
           const d = await tmdb.getMovieDetails(tmdbId);
-          const meta = {
+          const meta: MediaMeta = {
             title: d?.title || d?.original_title || "Untitled",
-            year: d?.release_date ? Number(String(d.release_date).slice(0, 4)) : undefined,
-            poster: tmdb.getPosterURL(d?.poster_path || null) || undefined,
           };
+
+          const yearStr = d?.release_date ? String(d.release_date).slice(0, 4) : "";
+          const yearNum = yearStr ? Number(yearStr) : undefined;
+          if (typeof yearNum === "number" && !Number.isNaN(yearNum)) {
+            meta.year = yearNum;
+          }
+
+          const posterUrl = tmdb.getPosterURL(d?.poster_path || null) || undefined;
+          if (posterUrl) {
+            meta.poster = posterUrl;
+          }
+
           memoMeta.set(key, meta);
           return meta;
         }
 
         const d = await tmdb.getTVDetails(tmdbId);
-        const meta = {
+        const meta: MediaMeta = {
           title: d?.name || d?.original_name || "Untitled",
-          year: d?.first_air_date ? Number(String(d.first_air_date).slice(0, 4)) : undefined,
-          poster: tmdb.getPosterURL(d?.poster_path || null) || undefined,
         };
+
+        const yearStr = d?.first_air_date ? String(d.first_air_date).slice(0, 4) : "";
+        const yearNum = yearStr ? Number(yearStr) : undefined;
+        if (typeof yearNum === "number" && !Number.isNaN(yearNum)) {
+          meta.year = yearNum;
+        }
+
+        const posterUrl = tmdb.getPosterURL(d?.poster_path || null) || undefined;
+        if (posterUrl) {
+          meta.poster = posterUrl;
+        }
+
         memoMeta.set(key, meta);
         return meta;
       } catch (err) {
         console.warn("tmdb lookup failed for", key, err);
-        const fallback = { title: "Untitled" };
+        const fallback: MediaMeta = { title: "Untitled" };
         memoMeta.set(key, fallback);
         return fallback;
       }

@@ -19,7 +19,18 @@ function normEmail(e: string) {
   return e.trim().toLowerCase();
 }
 
+
 const isProd = process.env.NODE_ENV === "production";
+
+// Public URL base used in emails/deep links.
+// Prefer explicit env vars; otherwise fall back to the main web host.
+const WEB_BASE_URL = (process.env.APP_BASE_URL || "https://bfflix.com").replace(/\/$/, "");
+const PUBLIC_BASE_URL = (process.env.PUBLIC_BASE_URL || WEB_BASE_URL).replace(/\/$/, "");
+
+function buildVerifyLink(token: string) {
+  // This link hits the backend directly, verifies the token, then redirects to the web login (or can be handled by the app).
+  return `${PUBLIC_BASE_URL}/auth/verify/${token}`;
+}
 
 const tokenCookieOptions: CookieOptions = {
   httpOnly: true,
@@ -141,7 +152,7 @@ r.post("/signup", async (req, res) => {
         });
 
         // Always point users to the main production host
-        const verifyUrl = `https://bfflix.com/verify/${verifyToken}`;
+        const verifyUrl = buildVerifyLink(verifyToken);
 
         await sendVerificationEmail(user.email, verifyUrl, code, user.name);
       } catch (e) {
@@ -365,7 +376,7 @@ r.post("/request-verification", async (req, res) => {
     });
 
     // Always point users to the main production host
-    const verifyUrl = `https://bfflix.com/verify/${token}`;
+    const verifyUrl = buildVerifyLink(token);
 
     try {
       // sendVerificationEmail(email, verifyUrl, code, name)
@@ -378,6 +389,45 @@ r.post("/request-verification", async (req, res) => {
   } catch (err) {
     console.error("Request verification error:", err);
     return res.status(500).json({ error: "could_not_send" });
+  }
+});
+
+r.get("/verify/:token", async (req, res) => {
+  const token = String(req.params.token || "");
+  if (!token || token.length < 10) {
+    return res.status(400).send("Invalid verification link");
+  }
+
+  try {
+    const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
+
+    const verification = await EmailVerification.findOne({
+      tokenHash,
+      usedAt: null,
+      expiresAt: { $gt: new Date() },
+    });
+
+    if (!verification) {
+      return res.redirect(`${WEB_BASE_URL}/login?verified=0`);
+    }
+
+    const user = await User.findById(verification.userId);
+    if (!user) {
+      return res.redirect(`${WEB_BASE_URL}/login?verified=0`);
+    }
+
+    if (!(user as any).isVerified) {
+      (user as any).isVerified = true;
+      await user.save();
+    }
+
+    verification.usedAt = new Date();
+    await verification.save();
+
+    return res.redirect(`${WEB_BASE_URL}/login?verified=1`);
+  } catch (err) {
+    console.error("Verify link error:", err);
+    return res.redirect(`${WEB_BASE_URL}/login?verified=0`);
   }
 });
 
