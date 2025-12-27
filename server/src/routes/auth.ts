@@ -27,6 +27,14 @@ const isProd = process.env.NODE_ENV === "production";
 const WEB_BASE_URL = (process.env.APP_BASE_URL || "https://bfflix.com").replace(/\/$/, "");
 const PUBLIC_BASE_URL = (process.env.PUBLIC_BASE_URL || WEB_BASE_URL).replace(/\/$/, "");
 
+// Where to send users after clicking the email verify link.
+// Default to the web root to avoid 404s on deep-linked SPA routes.
+const VERIFY_REDIRECT_BASE = (process.env.VERIFY_REDIRECT_URL || WEB_BASE_URL).replace(/\/$/, "");
+
+function buildVerifyRedirectUrl(success: boolean) {
+  return `${VERIFY_REDIRECT_BASE}/?verified=${success ? 1 : 0}`;
+}
+
 function buildVerifyLink(token: string) {
   // This link hits the backend directly, verifies the token, then redirects to the web login (or can be handled by the app).
   return `${PUBLIC_BASE_URL}/auth/verify/${token}`;
@@ -83,6 +91,10 @@ const requestVerificationSchema = z.object({
   userId: z.string().min(1),
   email: z.string().email().transform(normEmail),
   name: z.string().trim().min(1),
+});
+
+const resendVerificationSchema = z.object({
+  email: z.string().email().transform(normEmail),
 });
 
 const verifyEmailSchema = z.object({
@@ -225,7 +237,12 @@ r.post("/login", async (req, res) => {
     }
 
     if (!(user as any).isVerified) {
-      return res.status(403).json({ error: "email_not_verified" });
+      return res.status(403).json({
+        error: "email_not_verified",
+        userId: user._id,
+        email: user.email,
+        canResend: true,
+      });
     }
 
     // On success: clear counters and lock
@@ -392,6 +409,60 @@ r.post("/request-verification", async (req, res) => {
   }
 });
 
+// Resend verification email by email address (safe response to avoid enumeration)
+r.post("/resend-verification", async (req, res) => {
+  const parsed = resendVerificationSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({
+      error: "validation_error",
+      details: parsed.error.flatten().fieldErrors,
+    });
+  }
+
+  const { email } = parsed.data;
+
+  try {
+    const user = await User.findOne({ email }).select("_id email name isVerified");
+
+    // Always return ok to avoid revealing whether an email exists.
+    if (!user) return res.json({ ok: true });
+    if ((user as any).isVerified) return res.json({ ok: true });
+
+    // Clear any previous unused verifications (expired or not)
+    await EmailVerification.deleteMany({
+      userId: (user as any)._id,
+      usedAt: null,
+    });
+
+    const verifyToken = crypto.randomBytes(32).toString("hex");
+    const tokenHash = crypto.createHash("sha256").update(verifyToken).digest("hex");
+
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    const codeHash = crypto.createHash("sha256").update(code).digest("hex");
+
+    await EmailVerification.create({
+      userId: (user as any)._id,
+      tokenHash,
+      codeHash,
+      expiresAt: new Date(Date.now() + 60 * 60 * 1000), // 1 hour
+    });
+
+    const verifyUrl = buildVerifyLink(verifyToken);
+
+    try {
+      await sendVerificationEmail((user as any).email, verifyUrl, code, (user as any).name);
+    } catch (e) {
+      console.error("Resend verification email failed:", e);
+    }
+
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error("Resend verification error:", err);
+    // Still return ok to avoid enumeration
+    return res.json({ ok: true });
+  }
+});
+
 r.get("/verify/:token", async (req, res) => {
   const token = String(req.params.token || "");
   if (!token || token.length < 10) {
@@ -408,12 +479,12 @@ r.get("/verify/:token", async (req, res) => {
     });
 
     if (!verification) {
-      return res.redirect(`${WEB_BASE_URL}/login?verified=0`);
+      return res.redirect(buildVerifyRedirectUrl(false));
     }
 
     const user = await User.findById(verification.userId);
     if (!user) {
-      return res.redirect(`${WEB_BASE_URL}/login?verified=0`);
+      return res.redirect(buildVerifyRedirectUrl(false));
     }
 
     if (!(user as any).isVerified) {
@@ -424,10 +495,10 @@ r.get("/verify/:token", async (req, res) => {
     verification.usedAt = new Date();
     await verification.save();
 
-    return res.redirect(`${WEB_BASE_URL}/login?verified=1`);
+    return res.redirect(buildVerifyRedirectUrl(true));
   } catch (err) {
     console.error("Verify link error:", err);
-    return res.redirect(`${WEB_BASE_URL}/login?verified=0`);
+    return res.redirect(buildVerifyRedirectUrl(false));
   }
 });
 

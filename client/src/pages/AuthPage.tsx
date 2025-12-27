@@ -80,6 +80,7 @@ export default function AuthPage() {
   const [verifyCode, setVerifyCode] = useState("");
   const [isVerifying, setIsVerifying] = useState(false);
   const [pendingVerificationEmail, setPendingVerificationEmail] = useState("");
+  const [isResendingVerification, setIsResendingVerification] = useState(false);
 
   // Show / hide password state
   const [showPassword, setShowPassword] = useState(false);
@@ -91,15 +92,27 @@ export default function AuthPage() {
 
   const isLogin = mode === "login";
 
-  // When coming back from email verification, show a success message and force login mode
+  // When coming back from email verification, show a message and force login mode
   useEffect(() => {
     const verifiedParam =
       searchParams.get("verified") ||
       searchParams.get("emailVerified") ||
       searchParams.get("verification");
 
-    if (verifiedParam) {
-      setMode("login");
+    if (!verifiedParam) return;
+
+    setMode("login");
+
+    if (verifiedParam === "1" || verifiedParam.toLowerCase() === "true") {
+      setError(null);
+      setInfoMessage("Your email has been verified. You can now sign in.");
+    } else if (verifiedParam === "0" || verifiedParam.toLowerCase() === "false") {
+      setInfoMessage(null);
+      setError(
+        "That verification link is invalid or expired. Please request a new verification email and try again."
+      );
+    } else {
+      // Any other truthy value: keep the previous behavior (treat as success)
       setError(null);
       setInfoMessage("Your email has been verified. You can now sign in.");
     }
@@ -111,10 +124,19 @@ export default function AuthPage() {
     setInfoMessage(null);
 
     if (nextMode === "login") {
-      // When going back to login, we can ignore register-only fields
+      // Clear all previously-entered data when returning to login (avoid autofill from register)
+      setEmail("");
+      setPassword("");
+      setConfirmPassword("");
+      setFirstName("");
+      setLastName("");
       setAcceptedTerms(false);
       setAcceptedPrivacy(false);
-      setConfirmPassword("");
+
+      // Also reset any verification UI state
+      setPendingVerificationEmail("");
+      setVerifyCode("");
+      setShowVerifyModal(false);
     }
   }
 
@@ -182,7 +204,7 @@ export default function AuthPage() {
           setPendingVerificationEmail(email);
           setShowVerifyModal(true);
           setInfoMessage(
-            "We emailed you a 6-digit verification code. Enter it below to verify your account."
+            "Your email is not verified yet. Enter the 6-digit code we emailed you, or resend a new code."
           );
           setError(null);
         } else {
@@ -281,11 +303,36 @@ export default function AuthPage() {
         err?.message === "invalid_code"
           ? "That verification code is not valid. Please check your email and try again."
           : err?.message === "code_expired"
-          ? "That verification code has expired. Request a new one from your email."
+          ? "That verification code has expired. Please resend a new code and try again."
           : err?.message || "We could not verify your email. Please try again.";
       setError(msg);
     } finally {
       setIsVerifying(false);
+    }
+  }
+
+  async function handleResendVerification() {
+    const emailToResend = (pendingVerificationEmail || email).trim();
+    if (!emailToResend) {
+      setError("Please enter your email first.");
+      return;
+    }
+
+    try {
+      setIsResendingVerification(true);
+      setError(null);
+      setInfoMessage(null);
+
+      await apiPost("/auth/resend-verification", { email: emailToResend });
+
+      setInfoMessage(
+        "If an account exists for that email, we sent a new verification email with a 6-digit code."
+      );
+    } catch (err: any) {
+      const msg = err?.message || "We could not resend the verification email. Please try again.";
+      setError(msg);
+    } finally {
+      setIsResendingVerification(false);
     }
   }
 
@@ -1195,6 +1242,14 @@ export default function AuthPage() {
                 className="w-full rounded-xl bg-red-600 hover:bg-red-500 text-sm font-medium text-white py-2.5 flex items-center justify-center gap-2 shadow-md shadow-red-900/60 transition disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 {isVerifying ? "Verifying..." : "Verify email"}
+              </button>
+              <button
+                type="button"
+                onClick={handleResendVerification}
+                disabled={isResendingVerification || isVerifying}
+                className="w-full rounded-xl bg-zinc-900 hover:bg-zinc-800 text-sm font-medium text-zinc-100 py-2.5 flex items-center justify-center gap-2 border border-zinc-700 transition disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                {isResendingVerification ? "Resending..." : "Resend code"}
               </button>
               <p className="text-[11px] text-zinc-500">
                 If you did not receive the email, check your spam folder. If it is
