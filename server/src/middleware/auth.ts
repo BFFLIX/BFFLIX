@@ -1,7 +1,7 @@
 
 // server/src/middleware/auth.ts
 import { Request, Response, NextFunction } from "express";
-import { verifyToken, JwtPayload } from "../lib/jwt";
+import { verifyAccessToken, JwtPayload } from "../lib/jwt";
 import User from "../models/user";
 
 export interface AuthedRequest extends Request {
@@ -33,10 +33,13 @@ export async function requireAuth(
 
     let payload: JwtPayload;
     try {
-      payload = verifyToken(token);
+      payload = verifyAccessToken(token);
     } catch (e: any) {
       if (e?.code === "TOKEN_EXPIRED") {
         return res.status(401).json({ error: "token_expired" });
+      }
+      if (e?.code === "WRONG_TOKEN_TYPE") {
+        return res.status(401).json({ error: "invalid_token" });
       }
       return res.status(401).json({ error: "invalid_token" });
     }
@@ -46,7 +49,7 @@ export async function requireAuth(
       return res.status(401).json({ error: "unauthorized" });
     }
 
-    req.user = { id: String(user._id), isAdmin: !!user.isAdmin };
+    req.user = { id: String((user as any)._id), isAdmin: !!(user as any).isAdmin };
     next();
   } catch {
     return res.status(401).json({ error: "unauthorized" });
