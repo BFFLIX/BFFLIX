@@ -6,12 +6,47 @@ import { z } from "zod";
 import bcrypt from "bcryptjs";
 import User from "../models/user";
 import PasswordReset from "../models/PasswordReset";
-import { signToken } from "../lib/jwt";
+import { signAccessToken, signRefreshToken, verifyRefreshToken } from "../lib/jwt";
 import { generateToken, hashToken } from "../lib/resetToken";
 import { sendPasswordResetEmail, sendVerificationEmail } from "../lib/mailer";
 import { validatePassword } from "../lib/password";
 import crypto from "crypto";
 import EmailVerification from "../models/EmailVerification";
+import mongoose from "mongoose";
+
+// Refresh token storage (hash only) so we can revoke per-device tokens.
+// Note: kept inline to avoid creating new files right now; we can move it into /models later.
+type RefreshTokenDoc = {
+  userId: mongoose.Types.ObjectId;
+  tokenHash: string;
+  expiresAt: Date;
+  revokedAt?: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+  replacedByTokenHash?: string | null;
+};
+
+const RefreshTokenSchema = new mongoose.Schema<RefreshTokenDoc>(
+  {
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true, index: true },
+    tokenHash: { type: String, required: true, unique: true, index: true },
+    expiresAt: { type: Date, required: true, index: true },
+    revokedAt: { type: Date, default: null },
+    replacedByTokenHash: { type: String, default: null },
+  },
+  { timestamps: true }
+);
+
+// TTL cleanup for old tokens (Mongo will delete after expiresAt)
+RefreshTokenSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+
+const RefreshToken =
+  (mongoose.models.RefreshToken as mongoose.Model<RefreshTokenDoc>) ||
+  mongoose.model<RefreshTokenDoc>("RefreshToken", RefreshTokenSchema);
+
+function hashRefreshToken(raw: string) {
+  return crypto.createHash("sha256").update(raw).digest("hex");
+}
 
 const r = Router();
 
@@ -101,6 +136,15 @@ const verifyEmailSchema = z.object({
   token: z.string().optional(),
   code: z.string().optional(),
   email: z.string().email().transform(normEmail).optional(),
+});
+
+const refreshSchema = z.object({
+  refreshToken: z.string().min(20),
+});
+
+const logoutSchema = z.object({
+  refreshToken: z.string().min(20).optional(),
+  all: z.boolean().optional(),
 });
 
 // ---------- Signup ----------
@@ -252,12 +296,27 @@ r.post("/login", async (req, res) => {
       await user.save();
     }
 
-    const token = signToken(String(user._id), (user as any).tokenVersion ?? 0);
+    const tokenVersion = (user as any).tokenVersion ?? 0;
+
+    const accessToken = signAccessToken(String(user._id), tokenVersion);
+    const refreshToken = signRefreshToken(String(user._id), tokenVersion);
+
+    // Store refresh token hash so it can be revoked later
+    await RefreshToken.create({
+      userId: user._id,
+      tokenHash: hashRefreshToken(refreshToken),
+      expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // keep in sync with JWT_REFRESH_EXPIRES_IN
+    });
+
+    // Backward compat for web: keep setting cookie named "token" with the access token
+    const token = accessToken;
 
     return res
       .cookie("token", token, tokenCookieOptions)
       .json({
-        token,
+        token, // legacy
+        accessToken,
+        refreshToken,
         user: { id: user._id, email: user.email, name: user.name, username: (user as any).username },
       });
   } catch (err) {
@@ -597,4 +656,123 @@ r.post("/password-strength", (req, res) => {
   return res.json({ ok: check.ok, score: check.score, details: check.errors });
 });
 
+
+
+// ---------- Refresh (rotate refresh token; issue new access token) ----------
+r.post("/refresh", async (req, res) => {
+  const parsed = refreshSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({
+      error: "validation_error",
+      details: parsed.error.flatten().fieldErrors,
+    });
+  }
+
+  const { refreshToken } = parsed.data;
+
+  try {
+    const payload = verifyRefreshToken(refreshToken);
+
+    // Ensure user still exists and tokenVersion matches (logout-all / password reset bumps tokenVersion)
+    const user = await User.findById(payload.sub).select("_id email name username tokenVersion");
+    if (!user) return res.status(401).json({ error: "invalid_refresh" });
+
+    const tokenVersion = (user as any).tokenVersion ?? 0;
+    if (payload.ver !== tokenVersion) {
+      return res.status(401).json({ error: "invalid_refresh" });
+    }
+
+    const oldHash = hashRefreshToken(refreshToken);
+
+    const existing = await RefreshToken.findOne({
+      userId: user._id,
+      tokenHash: oldHash,
+      revokedAt: null,
+      expiresAt: { $gt: new Date() },
+    });
+
+    if (!existing) {
+      return res.status(401).json({ error: "invalid_refresh" });
+    }
+
+    // Rotate: revoke old refresh token and issue a new one
+    const newAccessToken = signAccessToken(String(user._id), tokenVersion);
+    const newRefreshToken = signRefreshToken(String(user._id), tokenVersion);
+    const newHash = hashRefreshToken(newRefreshToken);
+
+    existing.revokedAt = new Date();
+    (existing as any).replacedByTokenHash = newHash;
+    await existing.save();
+
+    await RefreshToken.create({
+      userId: user._id,
+      tokenHash: newHash,
+      expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+    });
+
+    // Backward compat cookie: refresh sets a new access token cookie
+    res.cookie("token", newAccessToken, tokenCookieOptions);
+
+    return res.json({
+      accessToken: newAccessToken,
+      refreshToken: newRefreshToken,
+      user: { id: user._id, email: (user as any).email, name: (user as any).name, username: (user as any).username },
+    });
+  } catch (err) {
+    console.error("Refresh error:", err);
+    return res.status(401).json({ error: "invalid_refresh" });
+  }
+});
+
+// ---------- Logout (revoke refresh token or all refresh tokens) ----------
+r.post("/logout", async (req, res) => {
+  const parsed = logoutSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    return res.status(400).json({
+      error: "validation_error",
+      details: parsed.error.flatten().fieldErrors,
+    });
+  }
+
+  const { refreshToken, all } = parsed.data;
+
+  try {
+    if (all) {
+      // If the client sends a refresh token, use it to identify the user; otherwise no-op
+      if (refreshToken) {
+        try {
+          const payload = verifyRefreshToken(refreshToken);
+          await RefreshToken.updateMany(
+            { userId: payload.sub, revokedAt: null },
+            { $set: { revokedAt: new Date() } }
+          );
+        } catch {
+          // ignore
+        }
+      }
+
+      // Clear cookie for web
+      res.clearCookie("token", { path: "/" });
+      return res.json({ ok: true });
+    }
+
+    if (refreshToken) {
+      const h = hashRefreshToken(refreshToken);
+      await RefreshToken.updateOne(
+        { tokenHash: h, revokedAt: null },
+        { $set: { revokedAt: new Date() } }
+      );
+    }
+
+    // Clear cookie for web
+    res.clearCookie("token", { path: "/" });
+
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error("Logout error:", err);
+    // Always return ok to avoid leaking token validity
+    res.clearCookie("token", { path: "/" });
+    return res.json({ ok: true });
+  }
+});
 export default r;
