@@ -13,7 +13,7 @@ export default function NotFoundScreen() {
         <Text style={styles.title}>This screen doesn't exist.</Text>
 
         {/** Typed route list may not include "/"; send users to the main tabs instead. */}
-        <Link href={({ pathname: "/(tabs)" } as unknown as Href)} style={styles.link}>
+        <Link href={"/(app)/(tabs)" as unknown as Href} style={styles.link}>
           <Text style={styles.linkText}>Go to home screen!</Text>
         </Link>
       </View>
