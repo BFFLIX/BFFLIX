@@ -118,7 +118,10 @@ export async function apiFetch(path: string, options: RequestOptions = {}) {
     if (access) headers.set("Authorization", `Bearer ${access}`);
   }
 
-  if (!headers.has("Content-Type") && options.body) {
+  // Set Content-Type for JSON methods, even without a body
+  const method = (options.method || "GET").toUpperCase();
+  const needsContentType = ["POST", "PUT", "PATCH", "DELETE"].includes(method);
+  if (!headers.has("Content-Type") && needsContentType) {
     headers.set("Content-Type", "application/json");
   }
 

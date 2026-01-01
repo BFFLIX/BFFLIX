@@ -35,10 +35,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     (async () => {
-      const access = await getAccessToken();
-      const refresh = await getRefreshToken();
-      setIsAuthed(Boolean(access || refresh));
-      setIsReady(true);
+      try {
+        const access = await getAccessToken();
+        const refresh = await getRefreshToken();
+        setIsAuthed(Boolean(access || refresh));
+      } catch (error) {
+        console.error('[AUTH] Error checking tokens:', error);
+        setIsAuthed(false);
+      } finally {
+        setIsReady(true);
+      }
     })();
   }, []);
 
@@ -48,10 +54,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       skipAuth: true,
       body: JSON.stringify({ email, password }),
     });
-
-    console.log("Login response:", data);
-    console.log("Access token type:", typeof data.accessToken, "Value:", data.accessToken);
-    console.log("Refresh token type:", typeof data.refreshToken, "Value:", data.refreshToken);
 
     await setTokens(data.accessToken, data.refreshToken);
     setIsAuthed(true);
