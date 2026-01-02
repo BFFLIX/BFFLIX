@@ -10,16 +10,23 @@ import { useComments } from "../../hooks/useComments";
 type CommentSectionProps = {
   postId: string;
   currentUserId?: string;
+  currentUserName?: string;
   onCommentCountChange?: (newCount: number) => void;
 };
 
 export function CommentSection({
   postId,
   currentUserId,
+  currentUserName,
   onCommentCountChange,
 }: CommentSectionProps) {
-  const { comments, isLoading, isExpanded, isSubmitting, toggle, add, remove } =
-    useComments(postId);
+  const { comments, isLoading, isSubmitting, fetch, add, remove } =
+    useComments(postId, currentUserId, currentUserName);
+
+  // Load comments when component mounts
+  React.useEffect(() => {
+    fetch();
+  }, [fetch]);
 
   const handleAddComment = async (text: string) => {
     await add(text);
@@ -37,11 +44,6 @@ export function CommentSection({
     }
   };
 
-  // Don't render if not expanded
-  if (!isExpanded) {
-    return null;
-  }
-
   return (
     <View style={feedStyles.commentsSection}>
       {/* Loading State */}
@@ -55,7 +57,7 @@ export function CommentSection({
       ) : (
         <>
           {/* Comments List */}
-          {comments.length > 0 ? (
+          {comments.length > 0 && (
             <View style={feedStyles.commentsList}>
               {comments.map((comment) => (
                 <CommentItem
@@ -66,37 +68,12 @@ export function CommentSection({
                 />
               ))}
             </View>
-          ) : (
-            <Text
-              style={{
-                color: feedColors.textSecondary,
-                fontSize: 14,
-                marginBottom: 12,
-                fontStyle: "italic",
-              }}
-            >
-              No comments yet. Be the first!
-            </Text>
           )}
 
-          {/* Add Comment Input */}
+          {/* Add Comment Input - ALWAYS SHOW */}
           <CommentInput onSubmit={handleAddComment} isSubmitting={isSubmitting} />
         </>
       )}
-
-      {/* Collapse Button */}
-      <Pressable
-        onPress={toggle}
-        style={{
-          paddingVertical: 8,
-          alignItems: "center",
-          marginTop: 12,
-        }}
-      >
-        <Text style={{ color: feedColors.textSecondary, fontSize: 13 }}>
-          Hide comments
-        </Text>
-      </Pressable>
     </View>
   );
 }

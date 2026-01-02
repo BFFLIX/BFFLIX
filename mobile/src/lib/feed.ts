@@ -109,22 +109,12 @@ export async function fetchComments(
 export async function addComment(
   postId: string,
   text: string
-): Promise<FeedComment> {
-  const response = await apiJson<any>(`/posts/${postId}/comments`, {
+): Promise<{ id: string; createdAt: string }> {
+  // Backend only returns { id, createdAt }
+  return apiJson<{ id: string; createdAt: string }>(`/posts/${postId}/comments`, {
     method: "POST",
     body: JSON.stringify({ text }),
   });
-
-  // Backend only returns { id, createdAt }, so we need to construct the full comment
-  // Get current user to populate userId
-  const currentUser = await fetchCurrentUser();
-
-  return {
-    id: response.id,
-    userId: currentUser.id,
-    text: text,
-    createdAt: response.createdAt,
-  };
 }
 
 export async function deleteComment(
@@ -174,5 +164,13 @@ export async function fetchCircles(): Promise<Circle[]> {
 // ============================================================
 
 export async function fetchCurrentUser(): Promise<CurrentUser> {
-  return apiJson<CurrentUser>("/me");
+  const response = await apiJson<any>("/me");
+
+  // Transform backend response (_id -> id)
+  return {
+    id: String(response._id || response.id),
+    name: response.name,
+    email: response.email,
+    avatarUrl: response.avatarUrl,
+  };
 }

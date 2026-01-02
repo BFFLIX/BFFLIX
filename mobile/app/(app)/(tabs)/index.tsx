@@ -19,6 +19,7 @@ import { fetchCurrentUser } from "../../../src/lib/feed";
 
 export default function HomeScreen() {
   const [currentUserId, setCurrentUserId] = useState<string | undefined>();
+  const [currentUserName, setCurrentUserName] = useState<string | undefined>();
   const [isCreateModalVisible, setIsCreateModalVisible] = useState(false);
 
   const {
@@ -44,6 +45,7 @@ export default function HomeScreen() {
       try {
         const user = await fetchCurrentUser();
         setCurrentUserId(user.id);
+        setCurrentUserName(user.name);
       } catch (err) {
         console.error("Failed to fetch current user:", err);
       }
@@ -125,6 +127,7 @@ export default function HomeScreen() {
           <FeedPost
             post={item}
             currentUserId={currentUserId}
+            currentUserName={currentUserName}
             onLike={handleLike}
             onDelete={handleDelete}
           />
