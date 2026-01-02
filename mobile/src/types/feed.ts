@@ -29,6 +29,7 @@ export type FeedResponse = {
 export type FeedComment = {
   id: string;
   userId: string;
+  userName?: string;
   text: string;
   createdAt: string;
 };

@@ -5,23 +5,10 @@ import { Alert } from "react-native";
 import type { FeedComment } from "../types/feed";
 import { fetchComments, addComment, deleteComment } from "../lib/feed";
 
-export function useComments(postId: string) {
+export function useComments(postId: string, currentUserId?: string, currentUserName?: string) {
   const [comments, setComments] = useState<FeedComment[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [isExpanded, setIsExpanded] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [hasLoaded, setHasLoaded] = useState(false);
-
-  // Toggle comments section (expand/collapse)
-  const toggle = useCallback(async () => {
-    const newExpandedState = !isExpanded;
-    setIsExpanded(newExpandedState);
-
-    // Lazy load comments on first expansion
-    if (newExpandedState && !hasLoaded) {
-      await fetch();
-    }
-  }, [isExpanded, hasLoaded]);
 
   // Fetch comments from API
   const fetch = useCallback(async () => {
@@ -29,7 +16,6 @@ export function useComments(postId: string) {
       setIsLoading(true);
       const fetchedComments = await fetchComments(postId);
       setComments(fetchedComments);
-      setHasLoaded(true);
     } catch (error) {
       console.error("Failed to fetch comments:", error);
       Alert.alert("Error", "Failed to load comments");
@@ -42,11 +28,25 @@ export function useComments(postId: string) {
   // Add a new comment
   const add = useCallback(
     async (text: string) => {
+      if (!currentUserId) {
+        Alert.alert("Error", "You must be logged in to comment");
+        throw new Error("No current user");
+      }
+
       try {
         setIsSubmitting(true);
-        const newComment = await addComment(postId, text);
+        const response = await addComment(postId, text);
 
-        // Add comment to the list (prepend or append based on preference)
+        // Construct full comment object from backend response + current user
+        const newComment: FeedComment = {
+          id: response.id,
+          userId: currentUserId,
+          userName: currentUserName || "You",
+          text: text,
+          createdAt: response.createdAt,
+        };
+
+        // Add comment to the list (append to end)
         setComments((prev) => [...prev, newComment]);
       } catch (error) {
         console.error("Failed to add comment:", error);
@@ -56,7 +56,7 @@ export function useComments(postId: string) {
         setIsSubmitting(false);
       }
     },
-    [postId]
+    [postId, currentUserId, currentUserName]
   );
 
   // Delete a comment
@@ -81,17 +81,14 @@ export function useComments(postId: string) {
 
   // Refresh comments (useful after external updates)
   const refresh = useCallback(async () => {
-    if (isExpanded) {
-      await fetch();
-    }
-  }, [isExpanded, fetch]);
+    await fetch();
+  }, [fetch]);
 
   return {
     comments,
     isLoading,
-    isExpanded,
     isSubmitting,
-    toggle,
+    fetch,
     add,
     remove,
     refresh,

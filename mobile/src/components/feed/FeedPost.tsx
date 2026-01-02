@@ -12,6 +12,7 @@ import type { FeedPost as FeedPostType } from "../../types/feed";
 type FeedPostProps = {
   post: FeedPostType;
   currentUserId?: string;
+  currentUserName?: string;
   onLike: (postId: string, currentLikedState: boolean) => void;
   onDelete?: (postId: string) => void;
 };
@@ -19,6 +20,7 @@ type FeedPostProps = {
 export function FeedPost({
   post,
   currentUserId,
+  currentUserName,
   onLike,
   onDelete,
 }: FeedPostProps) {
@@ -46,6 +48,9 @@ export function FeedPost({
           authorAvatarUrl={post.authorAvatarUrl}
           circleNames={post.circleNames}
           createdAt={post.createdAt}
+          authorId={post.authorId}
+          currentUserId={currentUserId}
+          onDelete={onDelete ? () => onDelete(post.id) : undefined}
         />
 
         {/* Post Content */}
@@ -56,6 +61,7 @@ export function FeedPost({
           likeCount={post.likeCount}
           commentCount={commentCount}
           likedByMe={post.likedByMe}
+          commentsExpanded={commentsExpanded}
           onLike={handleLike}
           onComment={handleCommentToggle}
         />
@@ -65,6 +71,7 @@ export function FeedPost({
           <CommentSection
             postId={post.id}
             currentUserId={currentUserId}
+            currentUserName={currentUserName}
             onCommentCountChange={handleCommentCountChange}
           />
         )}

@@ -8,6 +8,7 @@ type PostActionsProps = {
   likeCount: number;
   commentCount: number;
   likedByMe?: boolean;
+  commentsExpanded?: boolean;
   onLike: () => void;
   onComment: () => void;
 };
@@ -16,6 +17,7 @@ export function PostActions({
   likeCount,
   commentCount,
   likedByMe,
+  commentsExpanded,
   onLike,
   onComment,
 }: PostActionsProps) {
@@ -43,22 +45,37 @@ export function PostActions({
             likedByMe && feedStyles.actionTextActive,
           ]}
         >
-          {likeCount > 0 ? likeCount : "Like"}
+          {likeCount > 0 ? `${likeCount} ${likeCount === 1 ? "Like" : "Likes"}` : "Like"}
         </Text>
       </Pressable>
 
       {/* Comment Button */}
-      <Pressable onPress={onComment} style={feedStyles.actionButton}>
+      <Pressable
+        onPress={onComment}
+        style={[
+          feedStyles.actionButton,
+          commentsExpanded && feedStyles.actionButtonActive,
+        ]}
+      >
         <Text
           style={[
             feedStyles.actionIcon,
-            { fontSize: 18, color: feedColors.textSecondary },
+            { fontSize: 18, color: commentsExpanded ? feedColors.commentActive : feedColors.textSecondary },
           ]}
         >
           💬
         </Text>
-        <Text style={feedStyles.actionText}>
-          {commentCount > 0 ? commentCount : "Comment"}
+        <Text
+          style={[
+            feedStyles.actionText,
+            commentsExpanded && feedStyles.actionTextActive,
+          ]}
+        >
+          {commentsExpanded
+            ? "Hide Comments"
+            : commentCount > 0
+            ? `${commentCount} ${commentCount === 1 ? "Comment" : "Comments"}`
+            : "Comment"}
         </Text>
       </Pressable>
     </View>
