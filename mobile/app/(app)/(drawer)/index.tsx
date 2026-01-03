@@ -10,6 +10,7 @@ import {
   RefreshControl,
 } from "react-native";
 import { feedStyles, feedColors } from "../../../src/styles/feedStyles";
+import { AppBar } from "../../../src/components/feed/AppBar";
 import { FeedHeader } from "../../../src/components/feed/FeedHeader";
 import { FeedPost } from "../../../src/components/feed/FeedPost";
 import { CreatePostFAB } from "../../../src/components/feed/CreatePostFAB";
@@ -63,9 +64,12 @@ export default function HomeScreen() {
   // Loading state
   if (isLoading) {
     return (
-      <View style={feedStyles.loadingContainer}>
-        <ActivityIndicator size="large" color={feedColors.primary} />
-        <Text style={feedStyles.emptyText}>Loading your feed...</Text>
+      <View style={feedStyles.container}>
+        <AppBar />
+        <View style={feedStyles.loadingContainer}>
+          <ActivityIndicator size="large" color={feedColors.primary} />
+          <Text style={feedStyles.emptyText}>Loading your feed...</Text>
+        </View>
       </View>
     );
   }
@@ -73,17 +77,20 @@ export default function HomeScreen() {
   // Error state
   if (error) {
     return (
-      <View style={feedStyles.emptyContainer}>
-        <Text style={feedStyles.emptyText}>Failed to load feed</Text>
-        <Text style={[feedStyles.emptyText, { fontSize: 14, marginTop: 8 }]}>
-          {error}
-        </Text>
-        <Pressable
-          onPress={() => refresh()}
-          style={[feedStyles.button, feedStyles.buttonPrimary, { marginTop: 16 }]}
-        >
-          <Text style={feedStyles.buttonTextPrimary}>Retry</Text>
-        </Pressable>
+      <View style={feedStyles.container}>
+        <AppBar />
+        <View style={feedStyles.emptyContainer}>
+          <Text style={feedStyles.emptyText}>Failed to load feed</Text>
+          <Text style={[feedStyles.emptyText, { fontSize: 14, marginTop: 8 }]}>
+            {error}
+          </Text>
+          <Pressable
+            onPress={() => refresh()}
+            style={[feedStyles.button, feedStyles.buttonPrimary, { marginTop: 16 }]}
+          >
+            <Text style={feedStyles.buttonTextPrimary}>Retry</Text>
+          </Pressable>
+        </View>
       </View>
     );
   }
@@ -92,6 +99,7 @@ export default function HomeScreen() {
   if (!posts || posts.length === 0) {
     return (
       <View style={feedStyles.container}>
+        <AppBar />
         <FeedHeader
           activeTab={scope}
           sortOrder={sort}
@@ -120,6 +128,7 @@ export default function HomeScreen() {
 
   return (
     <View style={feedStyles.container}>
+      <AppBar />
       <FlatList
         data={posts}
         keyExtractor={(item) => item.id}

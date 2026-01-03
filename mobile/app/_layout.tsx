@@ -41,7 +41,7 @@ function RootNavigator() {
     if (!isAuthed && !inAuthGroup) {
       router.replace("/(auth)/login");
     } else if (isAuthed && inAuthGroup) {
-      router.replace("/(app)/(tabs)");
+      router.replace("/(app)/(drawer)");
     }
   }, [isAuthed, segments]);
 

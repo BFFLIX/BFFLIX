@@ -1,0 +1,70 @@
+// mobile/src/components/feed/AppBar.tsx
+
+import React from "react";
+import { View, Text, Pressable, StyleSheet } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { Ionicons } from "@expo/vector-icons";
+import { useNavigation } from "expo-router";
+import type { DrawerNavigationProp } from "@react-navigation/drawer";
+import { feedColors } from "../../styles/feedStyles";
+
+export function AppBar() {
+  const navigation = useNavigation<DrawerNavigationProp<{}>>();
+  const insets = useSafeAreaInsets();
+
+  return (
+    <View style={[styles.container, { paddingTop: insets.top }]}>
+      <View style={styles.content}>
+        {/* Hamburger Menu */}
+        <Pressable
+          onPress={() => navigation.openDrawer()}
+          style={styles.menuButton}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        >
+          <Ionicons name="menu" size={28} color={feedColors.text} />
+        </Pressable>
+
+        {/* Logo */}
+        <View style={styles.logoContainer}>
+          <Text style={styles.logoText}>BFFlix</Text>
+        </View>
+
+        {/* Right side spacer for balance */}
+        <View style={styles.rightSpacer} />
+      </View>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    backgroundColor: feedColors.cardBackground,
+    borderBottomWidth: 1,
+    borderBottomColor: feedColors.border,
+  },
+  content: {
+    height: 56,
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+  },
+  menuButton: {
+    width: 44,
+    height: 44,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 8,
+  },
+  logoContainer: {
+    flex: 1,
+  },
+  logoText: {
+    fontSize: 22,
+    fontWeight: "700",
+    color: feedColors.primary,
+    letterSpacing: -0.5,
+  },
+  rightSpacer: {
+    width: 44,
+  },
+});
