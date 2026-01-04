@@ -1,11 +1,12 @@
 // mobile/src/components/feed/AppBar.tsx
 
 import React from "react";
-import { View, Text, Pressable, StyleSheet } from "react-native";
+import { View, Pressable, StyleSheet } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "expo-router";
 import type { DrawerNavigationProp } from "@react-navigation/drawer";
+import { BrandLogo } from "../common/BrandLogo";
 import { feedColors } from "../../styles/feedStyles";
 
 export function AppBar() {
@@ -26,7 +27,7 @@ export function AppBar() {
 
         {/* Logo */}
         <View style={styles.logoContainer}>
-          <Text style={styles.logoText}>BFFlix</Text>
+          <BrandLogo height="responsive" />
         </View>
 
         {/* Right side spacer for balance */}
