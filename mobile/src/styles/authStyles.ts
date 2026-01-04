@@ -1,19 +1,22 @@
 // mobile/src/styles/authStyles.ts
 
 import { StyleSheet } from "react-native";
+import { feedColors } from "./feedStyles";
 
+// Use feedColors as the source of truth for consistency
 export const colors = {
-  primary: "#007AFF",
-  error: "#FF3B30",
-  success: "#34C759",
-  warning: "#FF9500",
-  text: "#000000",
-  textSecondary: "#8E8E93",
-  border: "#C6C6C8",
-  borderFocus: "#007AFF",
-  background: "#FFFFFF",
-  backgroundSecondary: "#F2F2F7",
-  disabled: "#E5E5EA",
+  primary: feedColors.primary,
+  error: feedColors.error,
+  success: feedColors.success,
+  warning: feedColors.warning,
+  text: feedColors.text,
+  textSecondary: feedColors.textSecondary,
+  textTertiary: feedColors.textTertiary,
+  border: feedColors.border,
+  borderFocus: feedColors.primary,
+  background: feedColors.background,
+  backgroundSecondary: feedColors.backgroundSecondary,
+  disabled: "rgba(255, 255, 255, 0.1)",
 };
 
 export const authStyles = StyleSheet.create({
@@ -28,16 +31,24 @@ export const authStyles = StyleSheet.create({
     justifyContent: "center",
     padding: 24,
   },
+  logoContainer: {
+    alignItems: "center",
+    marginBottom: 32,
+  },
   title: {
-    fontSize: 28,
+    fontSize: 32,
     fontWeight: "700",
     color: colors.text,
-    marginBottom: 8,
+    marginBottom: 12,
+    textAlign: "center",
+    letterSpacing: -0.5,
   },
   subtitle: {
     fontSize: 16,
     color: colors.textSecondary,
-    marginBottom: 32,
+    marginBottom: 40,
+    textAlign: "center",
+    lineHeight: 22,
   },
   inputContainer: {
     marginBottom: 16,
@@ -51,11 +62,11 @@ export const authStyles = StyleSheet.create({
   input: {
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: 8,
-    padding: 12,
+    borderRadius: 12,
+    padding: 14,
     fontSize: 16,
     color: colors.text,
-    backgroundColor: colors.background,
+    backgroundColor: colors.backgroundSecondary,
   },
   inputFocused: {
     borderColor: colors.borderFocus,
@@ -77,32 +88,40 @@ export const authStyles = StyleSheet.create({
     marginTop: 8,
   },
   button: {
-    borderRadius: 8,
-    padding: 14,
+    borderRadius: 12,
+    padding: 16,
     alignItems: "center",
     justifyContent: "center",
     flexDirection: "row",
   },
   buttonPrimary: {
     backgroundColor: colors.primary,
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
   },
   buttonSecondary: {
     backgroundColor: "transparent",
-    borderWidth: 1,
-    borderColor: colors.primary,
+    borderWidth: 1.5,
+    borderColor: colors.border,
   },
   buttonDisabled: {
     backgroundColor: colors.disabled,
+    shadowOpacity: 0,
+    elevation: 0,
   },
   buttonText: {
     fontSize: 16,
-    fontWeight: "600",
+    fontWeight: "700",
+    letterSpacing: 0.3,
   },
   buttonTextPrimary: {
-    color: colors.background,
+    color: "#ffffff",
   },
   buttonTextSecondary: {
-    color: colors.primary,
+    color: colors.text,
   },
   buttonTextDisabled: {
     color: colors.textSecondary,
@@ -110,15 +129,16 @@ export const authStyles = StyleSheet.create({
   linkText: {
     color: colors.primary,
     fontSize: 15,
+    fontWeight: "600",
     textAlign: "center",
     marginTop: 16,
   },
   textButton: {
-    padding: 8,
+    padding: 12,
     alignItems: "center",
   },
   errorContainer: {
-    backgroundColor: "#FFEBEE",
+    backgroundColor: "rgba(239, 68, 68, 0.1)",
     borderLeftWidth: 4,
     borderLeftColor: colors.error,
     padding: 12,
@@ -133,7 +153,7 @@ export const authStyles = StyleSheet.create({
     color: colors.error,
   },
   successContainer: {
-    backgroundColor: "#E8F5E9",
+    backgroundColor: "rgba(52, 199, 89, 0.1)",
     borderLeftWidth: 4,
     borderLeftColor: colors.success,
     padding: 12,

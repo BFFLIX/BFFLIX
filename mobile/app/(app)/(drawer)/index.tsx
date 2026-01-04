@@ -17,8 +17,10 @@ import { CreatePostFAB } from "../../../src/components/feed/CreatePostFAB";
 import { CreatePostModal } from "../../../src/components/feed/CreatePostModal";
 import { useFeed } from "../../../src/hooks/useFeed";
 import { fetchCurrentUser } from "../../../src/lib/feed";
+import { useAuth } from "../../../src/auth/AuthContext";
 
 export default function HomeScreen() {
+  const { isAuthed, isReady } = useAuth();
   const [currentUserId, setCurrentUserId] = useState<string | undefined>();
   const [currentUserName, setCurrentUserName] = useState<string | undefined>();
   const [isCreateModalVisible, setIsCreateModalVisible] = useState(false);
@@ -40,18 +42,42 @@ export default function HomeScreen() {
     changeSort,
   } = useFeed();
 
-  // Fetch current user on mount
+  // Fetch current user on mount (only if authenticated)
   useEffect(() => {
+    // CRITICAL: Don't fetch anything if not ready or not authenticated
+    if (!isReady || !isAuthed) {
+      console.log('[HOME] Skipping fetchCurrentUser - isReady:', isReady, 'isAuthed:', isAuthed);
+      return;
+    }
+
+    console.log('[HOME] Fetching current user...');
     (async () => {
       try {
         const user = await fetchCurrentUser();
         setCurrentUserId(user.id);
         setCurrentUserName(user.name);
+        console.log('[HOME] Fetched user:', user.name);
       } catch (err) {
-        console.error("Failed to fetch current user:", err);
+        console.error("[HOME] Failed to fetch current user:", err);
+        // This should NEVER happen if guards are working
+        console.error("[HOME] THIS IS A BUG - fetchCurrentUser called without auth!");
       }
     })();
-  }, []);
+  }, [isAuthed, isReady]);
+
+  // CRITICAL: Don't render anything until BOTH ready AND authenticated
+  // This prevents API calls before user is logged in
+  if (!isReady) {
+    console.log('[HOME] Not ready yet, returning null');
+    return null;
+  }
+
+  if (!isAuthed) {
+    console.log('[HOME] Not authenticated, returning null');
+    return null;
+  }
+
+  console.log('[HOME] Rendering home screen - user is authenticated');
 
   // Handle post creation success
   const handlePostCreated = async () => {

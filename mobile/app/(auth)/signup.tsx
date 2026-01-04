@@ -14,7 +14,9 @@ import { AuthInput } from "../../src/components/auth/AuthInput";
 import { AuthButton } from "../../src/components/auth/AuthButton";
 import { ErrorMessage } from "../../src/components/auth/ErrorMessage";
 import { PasswordStrengthIndicator } from "../../src/components/auth/PasswordStrengthIndicator";
+import { BrandLogo } from "../../src/components/common/BrandLogo";
 import { authStyles } from "../../src/styles/authStyles";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   validateEmail,
   validatePassword,
@@ -35,10 +37,13 @@ interface SignupResponse {
 
 export default function SignupScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [name, setName] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
   const [username, setUsername] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -55,15 +60,29 @@ export default function SignupScreen() {
       return;
     }
 
-    const nameValidation = validateName(name);
-    if (!nameValidation.valid) {
-      setFieldErrors({ name: nameValidation.error! });
+    // Validate first name
+    const firstNameValidation = validateName(firstName);
+    if (!firstNameValidation.valid) {
+      setFieldErrors({ firstName: firstNameValidation.error! });
+      return;
+    }
+
+    // Validate last name
+    const lastNameValidation = validateName(lastName);
+    if (!lastNameValidation.valid) {
+      setFieldErrors({ lastName: lastNameValidation.error! });
       return;
     }
 
     const passwordValidation = validatePassword(password);
     if (!passwordValidation.valid) {
       setFieldErrors({ password: passwordValidation.errors.join(", ") });
+      return;
+    }
+
+    // Validate password confirmation
+    if (password !== confirmPassword) {
+      setFieldErrors({ confirmPassword: "Passwords do not match" });
       return;
     }
 
@@ -76,14 +95,15 @@ export default function SignupScreen() {
     try {
       setLoading(true);
 
-      // Call signup API
+      // Call signup API (combine first + last name for backend)
+      const fullName = `${firstName.trim()} ${lastName.trim()}`.trim();
       await apiJson<SignupResponse>("/auth/signup", {
         method: "POST",
         skipAuth: true,
         body: JSON.stringify({
           email: email.trim(),
           password,
-          name: name.trim(),
+          name: fullName,
           username: username.trim() || undefined,
         }),
       });
@@ -113,14 +133,21 @@ export default function SignupScreen() {
 
   return (
     <KeyboardAvoidingView
-      style={{ flex: 1 }}
+      style={{ flex: 1, backgroundColor: "#05010f" }}
       behavior={Platform.OS === "ios" ? "padding" : "height"}
     >
       <ScrollView
-        contentContainerStyle={authStyles.scrollContainer}
+        contentContainerStyle={[
+          authStyles.scrollContainer,
+          { paddingTop: insets.top + 40 },
+        ]}
         keyboardShouldPersistTaps="handled"
+        style={{ backgroundColor: "#05010f" }}
       >
         <View>
+          <View style={authStyles.logoContainer}>
+            <BrandLogo height={72} />
+          </View>
           <Text style={authStyles.title}>Create Account</Text>
           <Text style={authStyles.subtitle}>
             Sign up to start sharing with friends
@@ -129,17 +156,31 @@ export default function SignupScreen() {
           <ErrorMessage message={error} onDismiss={() => setError("")} />
 
           <AuthInput
-            label="Name"
-            value={name}
+            label="First Name"
+            value={firstName}
             onChangeText={(text) => {
-              setName(text);
-              setFieldErrors({ ...fieldErrors, name: "" });
+              setFirstName(text);
+              setFieldErrors({ ...fieldErrors, firstName: "" });
             }}
-            placeholder="Your name"
+            placeholder="John"
             autoCapitalize="words"
-            textContentType="name"
-            autoComplete="name"
-            error={fieldErrors.name}
+            textContentType="givenName"
+            autoComplete="name-given"
+            error={fieldErrors.firstName}
+          />
+
+          <AuthInput
+            label="Last Name"
+            value={lastName}
+            onChangeText={(text) => {
+              setLastName(text);
+              setFieldErrors({ ...fieldErrors, lastName: "" });
+            }}
+            placeholder="Doe"
+            autoCapitalize="words"
+            textContentType="familyName"
+            autoComplete="name-family"
+            error={fieldErrors.lastName}
           />
 
           <AuthInput
@@ -176,7 +217,7 @@ export default function SignupScreen() {
             value={password}
             onChangeText={(text) => {
               setPassword(text);
-              setFieldErrors({ ...fieldErrors, password: "" });
+              setFieldErrors({ ...fieldErrors, password: "", confirmPassword: "" });
             }}
             placeholder="Create a strong password"
             secureTextEntry
@@ -187,11 +228,25 @@ export default function SignupScreen() {
 
           <PasswordStrengthIndicator password={password} />
 
+          <AuthInput
+            label="Confirm Password"
+            value={confirmPassword}
+            onChangeText={(text) => {
+              setConfirmPassword(text);
+              setFieldErrors({ ...fieldErrors, confirmPassword: "" });
+            }}
+            placeholder="Re-enter your password"
+            secureTextEntry
+            textContentType="newPassword"
+            autoComplete="password-new"
+            error={fieldErrors.confirmPassword}
+          />
+
           <AuthButton
             title="Create Account"
             onPress={handleSignup}
             loading={loading}
-            disabled={!email || !password || !name}
+            disabled={!email || !password || !confirmPassword || !firstName || !lastName || password !== confirmPassword}
           />
 
           <View style={authStyles.divider}>

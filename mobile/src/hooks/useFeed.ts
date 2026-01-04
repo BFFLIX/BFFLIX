@@ -4,8 +4,11 @@ import { useState, useEffect, useCallback } from "react";
 import { Alert } from "react-native";
 import type { FeedPost, FeedScope, FeedSort } from "../types/feed";
 import { fetchFeed, likePost, unlikePost, deletePost } from "../lib/feed";
+import { useAuth } from "../auth/AuthContext";
 
 export function useFeed() {
+  const { isAuthed, isReady } = useAuth();
+
   // Feed data
   const [posts, setPosts] = useState<FeedPost[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
@@ -160,10 +163,12 @@ export function useFeed() {
     setSort(newSort);
   }, []);
 
-  // Reload feed when filters change
+  // Reload feed when filters change (only if authenticated and ready)
   useEffect(() => {
-    loadInitial();
-  }, [scope, sort]);
+    if (isReady && isAuthed) {
+      loadInitial();
+    }
+  }, [scope, sort, isReady, isAuthed, loadInitial]);
 
   return {
     // Data

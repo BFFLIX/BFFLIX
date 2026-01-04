@@ -8,7 +8,9 @@ import { useAuth } from "../../src/auth/AuthContext";
 import { AuthInput } from "../../src/components/auth/AuthInput";
 import { AuthButton } from "../../src/components/auth/AuthButton";
 import { ErrorMessage } from "../../src/components/auth/ErrorMessage";
+import { BrandLogo } from "../../src/components/common/BrandLogo";
 import { authStyles } from "../../src/styles/authStyles";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { validateEmail } from "../../src/lib/validation";
 import { extractErrorMessage } from "../../src/lib/errorMessages";
 import { ApiError } from "../../src/lib/api";
@@ -16,6 +18,7 @@ import { ApiError } from "../../src/lib/api";
 export default function LoginScreen() {
   const { login } = useAuth();
   const router = useRouter();
+  const insets = useSafeAreaInsets();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -84,16 +87,23 @@ export default function LoginScreen() {
 
   return (
     <KeyboardAvoidingView
-      style={{ flex: 1 }}
+      style={{ flex: 1, backgroundColor: "#05010f" }}
       behavior={Platform.OS === "ios" ? "padding" : "height"}
     >
       <ScrollView
-        contentContainerStyle={authStyles.scrollContainer}
+        contentContainerStyle={[
+          authStyles.scrollContainer,
+          { paddingTop: insets.top + 40 },
+        ]}
         keyboardShouldPersistTaps="handled"
+        style={{ backgroundColor: "#05010f" }}
       >
         <View>
+          <View style={authStyles.logoContainer}>
+            <BrandLogo height={72} />
+          </View>
           <Text style={authStyles.title}>Welcome Back</Text>
-          <Text style={authStyles.subtitle}>Sign in to continue to BFFlix</Text>
+          <Text style={authStyles.subtitle}>Sign in to continue</Text>
 
           <ErrorMessage message={error} onDismiss={() => setError("")} />
 

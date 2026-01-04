@@ -10,6 +10,7 @@ import {
   type TextInputProps,
   type KeyboardTypeOptions,
 } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 import { authStyles, colors } from "../../styles/authStyles";
 
 interface AuthInputProps extends Omit<TextInputProps, "style"> {
@@ -69,9 +70,14 @@ export function AuthInput({
           <TouchableOpacity
             style={styles.eyeButton}
             onPress={() => setIsPasswordVisible(!isPasswordVisible)}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            activeOpacity={0.6}
           >
-            <Text style={styles.eyeIcon}>{isPasswordVisible ? "👁️" : "👁️‍🗨️"}</Text>
+            <Ionicons
+              name={isPasswordVisible ? "eye-off-outline" : "eye-outline"}
+              size={22}
+              color={colors.textSecondary}
+            />
           </TouchableOpacity>
         )}
       </View>
@@ -86,11 +92,13 @@ const styles = StyleSheet.create({
   },
   eyeButton: {
     position: "absolute",
-    right: 12,
-    top: 12,
-    padding: 4,
-  },
-  eyeIcon: {
-    fontSize: 20,
+    right: 0,
+    top: 0,
+    bottom: 0,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 14,
+    minWidth: 44,
+    minHeight: 44,
   },
 });

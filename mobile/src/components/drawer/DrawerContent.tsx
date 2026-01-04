@@ -14,22 +14,31 @@ import { useAuth } from "../../auth/AuthContext";
 export function DrawerContent(props: DrawerContentComponentProps) {
   const router = useRouter();
   const pathname = usePathname();
-  const { logout } = useAuth();
+  const { logout, isAuthed, isReady } = useAuth();
   const [userName, setUserName] = useState<string>("");
   const [profilePicture, setProfilePicture] = useState<string>("");
 
   useEffect(() => {
+    // CRITICAL: Only fetch user if authenticated
+    if (!isReady || !isAuthed) {
+      console.log('[DRAWER] Skipping fetchCurrentUser - isReady:', isReady, 'isAuthed:', isAuthed);
+      setUserName("Guest");
+      return;
+    }
+
+    console.log('[DRAWER] Fetching current user...');
     (async () => {
       try {
         const user = await fetchCurrentUser();
         setUserName(user.name || "User");
         setProfilePicture(user.profilePicture || "");
+        console.log('[DRAWER] Fetched user:', user.name);
       } catch (err) {
-        console.error("Failed to fetch current user:", err);
+        console.error("[DRAWER] Failed to fetch current user:", err);
         setUserName("User");
       }
     })();
-  }, []);
+  }, [isReady, isAuthed]);
 
   const getInitials = (name: string): string => {
     const words = name.split(" ");
