@@ -1,7 +1,8 @@
-import { useEffect } from "react";
-import { View, ActivityIndicator, StyleSheet, Text } from "react-native";
+import { useEffect, useState } from "react";
+import { View, ActivityIndicator, StyleSheet } from "react-native";
 import { Stack, useRouter, useSegments } from "expo-router";
 import { AuthProvider, useAuth } from "../src/auth/AuthContext";
+import { LoadingScreen } from "../src/components/common/LoadingScreen";
 
 export default function RootLayout() {
   return (
@@ -15,44 +16,86 @@ export default function RootLayout() {
 
 function AuthInitializer({ children }: { children: React.ReactNode }) {
   const { isReady } = useAuth();
+  const [showLoading, setShowLoading] = useState(true);
+  const [animationComplete, setAnimationComplete] = useState(false);
 
-  // BLOCK all rendering until auth check completes
-  if (!isReady) {
+  useEffect(() => {
+    // Hide loading screen once auth is ready
+    if (isReady) {
+      setShowLoading(false);
+    }
+  }, [isReady]);
+
+  // Don't render children until both auth is ready AND animation is complete
+  if (!isReady || (showLoading && !animationComplete)) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#007AFF" />
-        <Text style={{ color: '#fff', marginTop: 12 }}>Loading...</Text>
-      </View>
+      <>
+        <LoadingScreen
+          visible={showLoading}
+          onAnimationComplete={() => setAnimationComplete(true)}
+        />
+        {/* Fallback for very slow loads */}
+        {!isReady && (
+          <View style={styles.fallbackContainer}>
+            <ActivityIndicator size="small" color="rgba(255,255,255,0.3)" />
+          </View>
+        )}
+      </>
     );
   }
 
-  // Only render children (RootNavigator) after isReady = true
+  // Only render children (RootNavigator) after everything is ready
   return <>{children}</>;
 }
 
 function RootNavigator() {
-  const { isAuthed } = useAuth();
+  const { isAuthed, isReady } = useAuth();
   const segments = useSegments();
   const router = useRouter();
+  const [navigationReady, setNavigationReady] = useState(false);
 
   useEffect(() => {
+    console.log('[NAV] Auth state - isReady:', isReady, 'isAuthed:', isAuthed, 'segments:', segments);
+
+    if (!isReady) {
+      console.log('[NAV] Not ready, waiting...');
+      return;
+    }
+
     const inAuthGroup = segments[0] === "(auth)";
+    console.log('[NAV] In auth group?', inAuthGroup);
 
     if (!isAuthed && !inAuthGroup) {
+      console.log('[NAV] Not authed and not in auth group - redirecting to login');
       router.replace("/(auth)/login");
     } else if (isAuthed && inAuthGroup) {
+      console.log('[NAV] Authed but in auth group - redirecting to home');
       router.replace("/(app)/(drawer)");
+    } else {
+      console.log('[NAV] No redirect needed');
     }
-  }, [isAuthed, segments]);
+
+    // Mark navigation as ready after first check
+    console.log('[NAV] Setting navigationReady to true');
+    setNavigationReady(true);
+  }, [isAuthed, segments, isReady]);
+
+  // Don't render Stack until navigation is ready to prevent screen mounting before redirect
+  if (!navigationReady) {
+    return (
+      <View style={styles.fallbackContainer}>
+        <ActivityIndicator size="small" color="rgba(255,255,255,0.3)" />
+      </View>
+    );
+  }
 
   return <Stack screenOptions={{ headerShown: false }} />;
 }
 
 const styles = StyleSheet.create({
-  loadingContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    backgroundColor: "#000",
+  fallbackContainer: {
+    position: "absolute",
+    bottom: 60,
+    alignSelf: "center",
   },
 });
