@@ -99,9 +99,7 @@ const signupSchema = z.object({
     .trim()
     .min(3, "Username must be at least 3 characters")
     .max(30, "Username must be at most 30 characters")
-    .regex(USERNAME_REGEX, "Only letters, numbers, dots, dashes, and underscores are allowed")
-    .transform((val) => val.toLowerCase())
-    .optional(),
+    .regex(USERNAME_REGEX, "Only letters, numbers, dots, dashes, and underscores are allowed"),
 });
 
 const loginSchema = z.object({
@@ -175,12 +173,18 @@ r.post("/signup", async (req, res) => {
     const existing = await User.findOne({ email });
     if (existing) return res.status(409).json({ error: "email_already_in_use" });
 
+    // Check username uniqueness (case-insensitive)
+    const usernameNormalized = username.trim().toLowerCase();
+    const existingUsername = await User.findOne({ usernameNormalized });
+    if (existingUsername) return res.status(409).json({ error: "username_already_in_use" });
+
     const passwordHash = await bcrypt.hash(password, 10);
     const user = await User.create({
       email,
       name: name.trim(),
+      username: username.trim(), // Preserve casing
+      usernameNormalized,
       passwordHash,
-      ...(username ? { username } : {}),
     });
 
     // Fire-and-forget: create verification token + 6 digit code and send welcome + verification email.
@@ -253,6 +257,12 @@ r.post("/login", async (req, res) => {
     const isSuspended = Boolean((user as any).isSuspended);
     if (isSuspended) {
       return res.status(403).json({ error: "account_suspended" });
+    }
+
+    // Check if account has been deleted
+    const deletedAt: Date | null = (user as any).deletedAt ?? null;
+    if (deletedAt) {
+      return res.status(403).json({ error: "account_deleted", message: "This account has been deleted" });
     }
 
     const lockUntil: Date | null = (user as any).lockUntil ?? null;

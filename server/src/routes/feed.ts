@@ -121,7 +121,7 @@ r.get(
       const mutualMap = new Map<string, number>();
       const authorProfileMap = new Map<
         string,
-        { name: string; avatarUrl?: string }
+        { name: string; username: string; avatarUrl?: string }
       >();
 
       if (authorIds.length) {
@@ -136,17 +136,22 @@ r.get(
         );
 
         const authors = await User.find({ _id: { $in: authorIds } })
-          .select("_id name avatarUrl")
+          .select("_id name username avatarUrl")
           .lean();
         authors.forEach((u: any) => {
           const safeName =
             typeof u.name === "string" && u.name.trim().length
               ? u.name.trim()
               : "Someone";
+          const safeUsername =
+            typeof u.username === "string" && u.username.trim().length
+              ? u.username.trim()
+              : "someone";
           const avatar =
             typeof u.avatarUrl === "string" ? u.avatarUrl.trim() : "";
           authorProfileMap.set(String(u._id), {
             name: safeName,
+            username: safeUsername,
             avatarUrl: avatar || undefined,
           });
         });
@@ -455,7 +460,7 @@ r.get(
         return {
           ...row,
           authorId: authorKey || undefined,
-          authorName: authorProfile?.name || fallbackName,
+          authorName: authorProfile?.username || fallbackName,
           authorAvatarUrl: authorProfile?.avatarUrl,
           circleNames,
           likeCount: likeCounts.get(key) || 0,

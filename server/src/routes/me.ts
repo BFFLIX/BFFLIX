@@ -25,8 +25,7 @@ const updateSchema = z.object({
     .trim()
     .min(3)
     .max(30)
-    .regex(/^[a-z0-9._-]+$/i, "Username can only contain letters, numbers, dots, dashes, and underscores")
-    .transform((val) => val.toLowerCase())
+    .regex(/^[a-zA-Z0-9._-]+$/, "Username can only contain letters, numbers, dots, dashes, and underscores")
     .optional(),
   avatarUrl: z
     .union([
@@ -126,6 +125,22 @@ r.patch("/", requireAuth, async (req: AuthedRequest, res) => {
     }
   }
 
+  // If username is being updated, also set usernameNormalized and check uniqueness
+  if (updateData.username) {
+    const usernameNormalized = updateData.username.trim().toLowerCase();
+
+    // Check if another user already has this username (case-insensitive)
+    const existingUser = await User.findOne({
+      usernameNormalized,
+      _id: { $ne: req.user!.id }
+    });
+    if (existingUser) {
+      return res.status(409).json({ error: "username_already_in_use" });
+    }
+
+    updateData.usernameNormalized = usernameNormalized;
+  }
+
   let updated;
   try {
     updated = await User.findByIdAndUpdate(
@@ -134,7 +149,7 @@ r.patch("/", requireAuth, async (req: AuthedRequest, res) => {
       { new: true, runValidators: true, select: "-passwordHash" }
     ).lean();
   } catch (err: any) {
-    if (err?.code === 11000 && err?.keyPattern?.username) {
+    if (err?.code === 11000 && err?.keyPattern?.usernameNormalized) {
       return res.status(409).json({ error: "username_already_in_use" });
     }
     throw err;
@@ -197,4 +212,61 @@ r.post("/password", requireAuth, async (req: AuthedRequest, res) => {
 
 
   return res.json({ ok: true });
+});
+
+// ---------- Delete Account (Soft Delete) ----------
+const deleteAccountSchema = z.object({
+  password: z.string().min(1, "Password required to confirm account deletion"),
+});
+
+r.delete("/", requireAuth, async (req: AuthedRequest, res) => {
+  const parsed = deleteAccountSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({
+      error: "validation_error",
+      details: parsed.error.flatten().fieldErrors,
+    });
+  }
+
+  const { password } = parsed.data;
+
+  // Fetch user with passwordHash
+  const user = await User.findById(req.user!.id).select("+passwordHash deletedAt");
+  if (!user) return res.status(404).json({ error: "user_not_found" });
+
+  // Check if already deleted
+  if ((user as any).deletedAt) {
+    return res.status(400).json({ error: "account_already_deleted" });
+  }
+
+  // Verify password for security
+  const passwordMatches = await bcrypt.compare(password, (user as any).passwordHash);
+  if (!passwordMatches) {
+    return res.status(401).json({ error: "invalid_password" });
+  }
+
+  // Soft delete: anonymize user data
+  const anonymizedEmail = `deleted_${user._id}@deleted.local`;
+  const anonymizedName = "Deleted User";
+  const anonymizedUsername = `deleted_${user._id}`;
+
+  await User.findByIdAndUpdate(user._id, {
+    $set: {
+      email: anonymizedEmail,
+      name: anonymizedName,
+      username: anonymizedUsername,
+      avatarUrl: "",
+      services: [],
+      deletedAt: new Date(),
+      tokenVersion: (user as any).tokenVersion + 1, // Invalidate all refresh tokens
+    },
+  });
+
+  // Delete user's streaming service associations
+  await UserStreamingService.deleteMany({ userId: user._id });
+
+  // Note: Posts, comments, likes remain but are now associated with "Deleted User"
+  // This preserves content integrity in the social network
+
+  return res.json({ ok: true, message: "Account deleted successfully" });
 });

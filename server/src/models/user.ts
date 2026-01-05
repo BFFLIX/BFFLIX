@@ -5,14 +5,14 @@ import crypto from "crypto";
 export const SERVICES = ["netflix","hulu","max","prime","disney","peacock"] as const;
 export type Service = typeof SERVICES[number];
 
-const USERNAME_PATTERN = /^[a-z0-9._-]+$/;
+const USERNAME_PATTERN = /^[a-zA-Z0-9._-]+$/;
 const MIN_USERNAME_LENGTH = 3;
 const MAX_USERNAME_LENGTH = 30;
 
 function sanitizeUsername(input?: string | null): string {
   if (!input) return "";
-  const lowered = input.trim().toLowerCase();
-  const cleaned = lowered.replace(/[^a-z0-9._-]+/g, "");
+  const trimmed = input.trim();
+  const cleaned = trimmed.replace(/[^a-zA-Z0-9._-]+/g, "");
   return cleaned.slice(0, MAX_USERNAME_LENGTH);
 }
 
@@ -45,7 +45,17 @@ const userSchema = new Schema(
     email: { type: String, required: true, unique: true },
     passwordHash: { type: String, required: true },
     name: { type: String, required: true },
+    // Display username (preserves casing)
     username: {
+      type: String,
+      required: true,
+      trim: true,
+      minlength: MIN_USERNAME_LENGTH,
+      maxlength: MAX_USERNAME_LENGTH,
+      match: USERNAME_PATTERN,
+    },
+    // Normalized username (lowercase, for uniqueness)
+    usernameNormalized: {
       type: String,
       required: true,
       unique: true,
@@ -53,7 +63,6 @@ const userSchema = new Schema(
       lowercase: true,
       minlength: MIN_USERNAME_LENGTH,
       maxlength: MAX_USERNAME_LENGTH,
-      match: USERNAME_PATTERN,
     },
     services: [{ type: String, enum: SERVICES, default: [] }],
     avatarUrl: { type: String, default: "" },
@@ -66,6 +75,9 @@ const userSchema = new Schema(
     lockUntil: { type: Date, default: null },
 
     tokenVersion: { type: Number, default: 0 },
+
+    // Soft delete
+    deletedAt: { type: Date, default: null },
   },
   { timestamps: true }
 );
@@ -74,11 +86,22 @@ userSchema.pre("save", function (next) {
   if (this.isModified("email") && typeof this.get("email") === "string") {
     this.set("email", this.get("email").trim().toLowerCase());
   }
+
+  // Auto-set usernameNormalized when username changes
+  if (this.isModified("username") && typeof this.get("username") === "string") {
+    this.set("usernameNormalized", this.get("username").trim().toLowerCase());
+  }
+
   next();
 });
 
 userSchema.pre("validate", async function (next) {
   try {
+    // Only auto-generate username for new users, not for updates
+    if (!this.isNew) {
+      return next();
+    }
+
     const model = this.constructor as mongoose.Model<any>;
     let username = sanitizeUsername((this as any).username);
     if (!username || username.length < MIN_USERNAME_LENGTH) {
