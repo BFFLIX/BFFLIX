@@ -666,7 +666,7 @@ r.get("/:id/members", requireAuth, async (req: AuthedRequest, res) => {
   const memberIds = circle.members.slice(skip, skip + limit);
 
   const members = await User.find({ _id: { $in: memberIds } })
-    .select("_id name email username")
+    .select("_id username avatarUrl")
     .lean();
 
   const ownerId = normalizeId(circle.createdBy);
@@ -674,10 +674,12 @@ r.get("/:id/members", requireAuth, async (req: AuthedRequest, res) => {
     const memberId = normalizeId(member._id);
     const isModerator = circle.moderators?.some(mod => normalizeId(mod) === memberId) ?? false;
     return {
-      ...member,
+      id: memberId,
+      username: member.username,
+      avatarUrl: member.avatarUrl,
       isOwner: ownerId === memberId,
       isModerator,
-      username: member.username,
+      role: ownerId === memberId ? "owner" : isModerator ? "moderator" : "member",
     };
   });
 
