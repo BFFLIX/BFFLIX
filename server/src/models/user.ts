@@ -69,6 +69,9 @@ const userSchema = new Schema(
     isAdmin: { type: Boolean, default: false },
     isVerified: { type: Boolean, default: false },
 
+    // Public circles to showcase on profile (only public circles can be shown)
+    publicCircleShowcaseIds: [{ type: Schema.Types.ObjectId, ref: "Circle", default: [] }],
+
     // Lockout + suspension
     isSuspended: { type: Boolean, default: false },
     failedLoginCount: { type: Number, default: 0 },

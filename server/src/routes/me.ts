@@ -18,6 +18,8 @@ r.get("/", requireAuth, async (req: AuthedRequest, res) => {
 const avatarDataUrlPattern =
   /^data:image\/(png|jpe?g|gif|webp|bmp);base64,[a-z0-9+/=]+$/i;
 
+const objectId = z.string().refine(Types.ObjectId.isValid, "invalid_object_id");
+
 const updateSchema = z.object({
   name: z.string().min(1).optional(),
   username: z
@@ -40,6 +42,7 @@ const updateSchema = z.object({
   services: z
     .array(z.enum(SERVICES as unknown as [Service, ...Service[]]))
     .optional(),
+  publicCircleShowcaseIds: z.array(objectId).optional(),
 });
 
 type ServiceMeta = {

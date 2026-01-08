@@ -167,9 +167,19 @@ r.get(
     const { circleId } = res.locals.params as z.infer<typeof circleParams>;
     const { page, limit } = res.locals.query as z.infer<typeof pagedQuery>;
 
-    // Ensure requester is a member
-    const circle = await Circle.exists({ _id: circleId, members: req.user!.id });
-    if (!circle) return res.status(403).json({ error: "forbidden", message: "access denied" });
+    // Check if circle exists and get visibility
+    const circle = await Circle.findById(circleId).select("visibility members").lean();
+    if (!circle) return res.status(404).json({ error: "not_found", message: "circle not found" });
+
+    // For private circles, require membership
+    const isMember = Array.isArray(circle.members) &&
+                     circle.members.some((m: any) => String(m) === req.user!.id);
+
+    if (circle.visibility === "private" && !isMember) {
+      return res.status(403).json({ error: "forbidden", message: "access denied" });
+    }
+
+    // Public circles allow preview for non-members
 
     const items = await Post.find({ circles: circleId })
       .sort({ createdAt: -1, _id: -1 })
@@ -442,6 +452,51 @@ r.delete(
 
     await Post.findByIdAndDelete(id);
     res.json({ ok: true });
+  })
+);
+
+// -------------------- Remove post from circle (moderator action) --------------------
+const removeFromCircleParams = z.object({
+  postId: objectId,
+  circleId: objectId,
+});
+
+r.delete(
+  "/:postId/circles/:circleId",
+  requireAuth,
+  validateParams(removeFromCircleParams),
+  asyncHandler(async (req: AuthedRequest, res) => {
+    const { postId, circleId } = res.locals.params as z.infer<typeof removeFromCircleParams>;
+
+    // Check if circle exists and user is moderator/owner
+    const circle = await Circle.findById(circleId).select("createdBy moderators").lean();
+    if (!circle) {
+      return res.status(404).json({ error: "not_found", message: "circle not found" });
+    }
+
+    const isOwner = String(circle.createdBy) === req.user!.id;
+    const isModerator = Array.isArray(circle.moderators) &&
+      circle.moderators.some((modId: any) => String(modId) === req.user!.id);
+
+    if (!isOwner && !isModerator) {
+      return res.status(403).json({
+        error: "forbidden",
+        message: "only circle owner or moderators can remove posts"
+      });
+    }
+
+    // Check if post exists
+    const post = await Post.findById(postId).select("circles").lean();
+    if (!post) {
+      return res.status(404).json({ error: "not_found", message: "post not found" });
+    }
+
+    // Remove circle from post.circles array
+    await Post.findByIdAndUpdate(postId, {
+      $pull: { circles: circleId }
+    });
+
+    res.json({ ok: true, message: "Post removed from circle" });
   })
 );
 
