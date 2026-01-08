@@ -644,12 +644,17 @@ r.get("/:id/members", requireAuth, async (req: AuthedRequest, res) => {
   const idCheck = objectId.safeParse(req.params.id);
   if (!idCheck.success) return res.status(400).json({ error: "Invalid circle id" });
 
-  const circle = await Circle.findOne({ 
-    _id: idCheck.data, 
-    members: req.user!.id 
-  }).lean();
+  const circle = await Circle.findById(idCheck.data).lean();
 
   if (!circle) {
+    return res.status(404).json({ error: "Circle not found" });
+  }
+
+  // Check membership
+  const isMember = Array.isArray(circle.members) && circle.members.some((m: any) => normalizeId(m) === req.user!.id);
+
+  // Private circles require membership to view members
+  if (circle.visibility === "private" && !isMember) {
     return res.status(403).json({ error: "You must be a member to view members" });
   }
 
