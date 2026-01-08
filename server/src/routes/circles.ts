@@ -169,17 +169,25 @@ r.get("/", requireAuth, async (req: AuthedRequest, res) => {
 
   res.json({ page, limit, items });
 });
-// ---------- Get one circle (members only for full details) ----------
+// ---------- Get one circle (public circles allow preview, private require membership) ----------
 r.get("/:id", requireAuth, async (req: AuthedRequest, res) => {
   const idCheck = objectId.safeParse(req.params.id);
   if (!idCheck.success) return res.status(400).json({ error: "Invalid id" });
 
-  const circle = await Circle.findOne({ _id: idCheck.data, members: req.user!.id })
+  const circle = await Circle.findById(idCheck.data)
     .select("name description visibility createdBy members moderators inviteCode createdAt updatedAt")
     .populate("members", "name email username avatarUrl")
     .lean({ virtuals: true });
 
-  if (!circle) return res.status(404).json({ error: "Circle not found or access denied" });
+  if (!circle) return res.status(404).json({ error: "Circle not found" });
+
+  // Check membership
+  const isMember = Array.isArray(circle.members) && circle.members.some((m: any) => normalizeId(m?._id || m) === req.user!.id);
+
+  // Private circles require membership
+  if (circle.visibility === "private" && !isMember) {
+    return res.status(403).json({ error: "Circle not found or access denied" });
+  }
 
   const ownerId = normalizeId(circle.createdBy);
   const viewerIsOwner = ownerId === req.user!.id;
@@ -217,6 +225,8 @@ r.get("/:id", requireAuth, async (req: AuthedRequest, res) => {
     createdAt: circle.createdAt,
     updatedAt: circle.updatedAt,
     members,
+    membersCount: members.length,
+    isMember,
     permissions: {
       isOwner: viewerIsOwner,
       isModerator: viewerIsModerator && !viewerIsOwner,
