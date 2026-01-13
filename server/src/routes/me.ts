@@ -43,6 +43,17 @@ const updateSchema = z.object({
     .array(z.enum(SERVICES as unknown as [Service, ...Service[]]))
     .optional(),
   publicCircleShowcaseIds: z.array(objectId).optional(),
+  // Privacy settings
+  profileVisibility: z.enum(["public", "friends", "private"]).optional(),
+  showCircles: z.boolean().optional(),
+  showViewingHistory: z.boolean().optional(),
+  showStats: z.boolean().optional(),
+  // Notification settings
+  notificationsEnabled: z.boolean().optional(),
+  notifyOnNewFollower: z.boolean().optional(),
+  notifyOnCircleInvite: z.boolean().optional(),
+  notifyOnPostLike: z.boolean().optional(),
+  notifyOnComment: z.boolean().optional(),
 });
 
 type ServiceMeta = {
@@ -272,4 +283,91 @@ r.delete("/", requireAuth, async (req: AuthedRequest, res) => {
   // This preserves content integrity in the social network
 
   return res.json({ ok: true, message: "Account deleted successfully" });
+});
+
+// ---------- Blocked Users ----------
+
+// Get list of blocked users
+r.get("/blocked", requireAuth, async (req: AuthedRequest, res) => {
+  try {
+    const user = await User.findById(req.user!.id)
+      .select("blockedUsers")
+      .populate("blockedUsers", "_id username avatarUrl")
+      .lean();
+
+    if (!user) {
+      return res.status(404).json({ error: "user_not_found" });
+    }
+
+    const blockedUsers = ((user as any).blockedUsers || []).map((u: any) => ({
+      id: String(u._id),
+      username: u.username,
+      avatarUrl: u.avatarUrl || undefined,
+    }));
+
+    res.json({ blockedUsers });
+  } catch (err) {
+    console.error("Failed to fetch blocked users:", err);
+    res.status(500).json({ error: "Failed to fetch blocked users" });
+  }
+});
+
+// Block a user
+r.post("/blocked/:userId", requireAuth, async (req: AuthedRequest, res) => {
+  try {
+    const userId = req.params.userId;
+
+    if (!userId || !Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({ error: "Invalid user ID" });
+    }
+
+    // Can't block yourself
+    if (userId === req.user!.id) {
+      return res.status(400).json({ error: "cannot_block_self" });
+    }
+
+    // Check if user exists
+    const targetUser = await User.findById(userId).select("_id username avatarUrl").lean();
+    if (!targetUser) {
+      return res.status(404).json({ error: "user_not_found" });
+    }
+
+    // Add to blocked list (using $addToSet to prevent duplicates)
+    await User.findByIdAndUpdate(req.user!.id, {
+      $addToSet: { blockedUsers: userId },
+    });
+
+    res.json({
+      ok: true,
+      blockedUser: {
+        id: String(targetUser._id),
+        username: targetUser.username,
+        avatarUrl: targetUser.avatarUrl || undefined,
+      },
+    });
+  } catch (err) {
+    console.error("Failed to block user:", err);
+    res.status(500).json({ error: "Failed to block user" });
+  }
+});
+
+// Unblock a user
+r.delete("/blocked/:userId", requireAuth, async (req: AuthedRequest, res) => {
+  try {
+    const userId = req.params.userId;
+
+    if (!userId || !Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({ error: "Invalid user ID" });
+    }
+
+    // Remove from blocked list
+    await User.findByIdAndUpdate(req.user!.id, {
+      $pull: { blockedUsers: userId },
+    });
+
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("Failed to unblock user:", err);
+    res.status(500).json({ error: "Failed to unblock user" });
+  }
 });
