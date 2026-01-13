@@ -72,6 +72,28 @@ const userSchema = new Schema(
     // Public circles to showcase on profile (only public circles can be shown)
     publicCircleShowcaseIds: [{ type: Schema.Types.ObjectId, ref: "Circle", default: [] }],
 
+    // Profile visibility setting
+    profileVisibility: {
+      type: String,
+      enum: ["public", "friends", "private"],
+      default: "public",
+    },
+
+    // Privacy toggles for public profiles
+    showCircles: { type: Boolean, default: true },
+    showViewingHistory: { type: Boolean, default: true },
+    showStats: { type: Boolean, default: true },
+
+    // Notification preferences
+    notificationsEnabled: { type: Boolean, default: true },
+    notifyOnNewFollower: { type: Boolean, default: true },
+    notifyOnCircleInvite: { type: Boolean, default: true },
+    notifyOnPostLike: { type: Boolean, default: true },
+    notifyOnComment: { type: Boolean, default: true },
+
+    // Blocked users
+    blockedUsers: [{ type: Schema.Types.ObjectId, ref: "User", default: [] }],
+
     // Lockout + suspension
     isSuspended: { type: Boolean, default: false },
     failedLoginCount: { type: Number, default: 0 },

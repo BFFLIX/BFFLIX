@@ -796,24 +796,88 @@ r.get("/users/:id/profile", async (req, res) => {
     }
 
     const user = await User.findById(userId)
-      .select("_id username avatarUrl createdAt")
+      .select("_id username avatarUrl createdAt profileVisibility showCircles showViewingHistory showStats services publicCircleShowcaseIds")
       .lean();
 
     if (!user) {
       return res.status(404).json({ error: "User not found" });
     }
 
-    // Count circles user is a member of (optional - can be removed if performance is a concern)
-    const Circle = mongoose.model("Circle");
-    const circlesCount = await Circle.countDocuments({ members: userId });
+    const isPublicProfile = (user as any).profileVisibility === "public";
 
-    res.json({
+    // Base response (always visible for any profile)
+    const response: Record<string, any> = {
       id: String(user._id),
       username: user.username,
       avatarUrl: user.avatarUrl || undefined,
-      circlesCount,
       createdAt: user.createdAt,
-    });
+      isPublicProfile,
+    };
+
+    // Private profiles only show basic info
+    if (!isPublicProfile) {
+      return res.json(response);
+    }
+
+    // Public profile - add additional data based on privacy toggles
+    const Circle = mongoose.model("Circle");
+    const Viewing = mongoose.model("Viewing");
+
+    // Always show circle count for public profiles
+    if ((user as any).showCircles !== false) {
+      response.circlesCount = await Circle.countDocuments({ members: userId });
+
+      // Get public circles to showcase
+      const showcaseIds = (user as any).publicCircleShowcaseIds || [];
+      if (showcaseIds.length > 0) {
+        const publicCircles = await Circle.find({
+          _id: { $in: showcaseIds },
+          visibility: "public",
+        })
+          .select("_id name description membersCount")
+          .lean();
+        response.publicCircles = publicCircles.map((c: any) => ({
+          id: String(c._id),
+          name: c.name,
+          description: c.description,
+          membersCount: c.membersCount || 0,
+        }));
+      }
+    }
+
+    // Streaming services (always shown for public profiles)
+    response.services = (user as any).services || [];
+
+    // Recent viewings and stats (if enabled)
+    if ((user as any).showViewingHistory !== false) {
+      const recentViewings = await Viewing.find({ user: userId })
+        .sort({ watchedAt: -1 })
+        .limit(5)
+        .select("title mediaType watchedAt rating posterPath")
+        .lean();
+      response.recentViewings = recentViewings.map((v: any) => ({
+        id: String(v._id),
+        title: v.title,
+        mediaType: v.mediaType,
+        watchedAt: v.watchedAt,
+        rating: v.rating,
+        posterPath: v.posterPath,
+      }));
+    }
+
+    // Stats (if enabled)
+    if ((user as any).showStats !== false) {
+      const totalViewings = await Viewing.countDocuments({ user: userId });
+      const movieCount = await Viewing.countDocuments({ user: userId, mediaType: "movie" });
+      const showCount = await Viewing.countDocuments({ user: userId, mediaType: "tv" });
+      response.stats = {
+        totalViewings,
+        movieCount,
+        showCount,
+      };
+    }
+
+    res.json(response);
   } catch (err) {
     console.error("Failed to fetch user profile:", err);
     return res.status(500).json({ error: "Failed to load profile" });
