@@ -4,25 +4,38 @@ import React from "react";
 import { View, Pressable, StyleSheet } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { useNavigation } from "expo-router";
-import type { DrawerNavigationProp } from "@react-navigation/drawer";
+import { useNavigation, useRouter } from "expo-router";
 import { BrandLogo } from "../common/BrandLogo";
 import { feedColors } from "../../styles/feedStyles";
 
 export function AppBar() {
-  const navigation = useNavigation<DrawerNavigationProp<{}>>();
+  const navigation = useNavigation();
+  const router = useRouter();
   const insets = useSafeAreaInsets();
+
+  // Check if drawer is available
+  const hasDrawer = typeof (navigation as any).openDrawer === 'function';
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
       <View style={styles.content}>
-        {/* Hamburger Menu */}
+        {/* Hamburger Menu or Back Button */}
         <Pressable
-          onPress={() => navigation.openDrawer()}
+          onPress={() => {
+            if (hasDrawer) {
+              (navigation as any).openDrawer();
+            } else {
+              router.back();
+            }
+          }}
           style={styles.menuButton}
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         >
-          <Ionicons name="menu" size={28} color={feedColors.text} />
+          <Ionicons
+            name={hasDrawer ? "menu" : "arrow-back"}
+            size={28}
+            color={feedColors.text}
+          />
         </Pressable>
 
         {/* Logo */}

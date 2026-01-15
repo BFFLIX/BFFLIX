@@ -83,12 +83,11 @@ export function validateName(name: string): ValidationResult {
 }
 
 /**
- * Validates username (optional field)
+ * Validates username (required field)
  */
 export function validateUsername(username: string): ValidationResult {
   if (!username || !username.trim()) {
-    // Username is optional, so empty is valid
-    return { valid: true };
+    return { valid: false, error: "Username is required" };
   }
 
   const trimmed = username.trim();
@@ -101,11 +100,11 @@ export function validateUsername(username: string): ValidationResult {
     return { valid: false, error: "Username must be less than 30 characters" };
   }
 
-  // Username should only contain alphanumeric characters, underscores, and hyphens
-  if (!/^[a-zA-Z0-9_-]+$/.test(trimmed)) {
+  // Username should only contain alphanumeric characters, dots, underscores, and hyphens
+  if (!/^[a-zA-Z0-9._-]+$/.test(trimmed)) {
     return {
       valid: false,
-      error: "Username can only contain letters, numbers, underscores, and hyphens",
+      error: "Username can only contain letters, numbers, dots, dashes, and underscores",
     };
   }
 

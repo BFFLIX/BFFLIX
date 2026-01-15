@@ -14,8 +14,9 @@ import { AuthInput } from "../../src/components/auth/AuthInput";
 import { AuthButton } from "../../src/components/auth/AuthButton";
 import { ErrorMessage } from "../../src/components/auth/ErrorMessage";
 import { PasswordStrengthIndicator } from "../../src/components/auth/PasswordStrengthIndicator";
+import { AgreementCheckbox } from "../../src/components/auth/AgreementCheckbox";
 import { BrandLogo } from "../../src/components/common/BrandLogo";
-import { authStyles } from "../../src/styles/authStyles";
+import { authStyles, colors } from "../../src/styles/authStyles";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   validateEmail,
@@ -45,6 +46,8 @@ export default function SignupScreen() {
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [username, setUsername] = useState("");
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
+  const [acceptedPrivacy, setAcceptedPrivacy] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
@@ -52,6 +55,12 @@ export default function SignupScreen() {
   async function handleSignup() {
     setError("");
     setFieldErrors({});
+
+    // Check agreements
+    if (!acceptedTerms || !acceptedPrivacy) {
+      setError("Please accept the Terms of Service and Privacy Policy to continue");
+      return;
+    }
 
     // Client-side validation
     const emailValidation = validateEmail(email);
@@ -104,7 +113,7 @@ export default function SignupScreen() {
           email: email.trim(),
           password,
           name: fullName,
-          username: username.trim() || undefined,
+          username: username.trim(),
         }),
       });
 
@@ -242,11 +251,53 @@ export default function SignupScreen() {
             error={fieldErrors.confirmPassword}
           />
 
+          {/* Agreement Checkboxes */}
+          <View style={{ marginTop: 24, marginBottom: 8 }}>
+            <AgreementCheckbox
+              checked={acceptedTerms}
+              onToggle={() => setAcceptedTerms(!acceptedTerms)}
+            >
+              <Text style={{ fontSize: 14, color: colors.textSecondary, lineHeight: 20 }}>
+                I agree to the{" "}
+                <Text
+                  style={{ color: colors.primary, fontWeight: "600" }}
+                  onPress={() => router.push("/(auth)/terms" as Href)}
+                >
+                  Terms of Service
+                </Text>
+              </Text>
+            </AgreementCheckbox>
+
+            <AgreementCheckbox
+              checked={acceptedPrivacy}
+              onToggle={() => setAcceptedPrivacy(!acceptedPrivacy)}
+            >
+              <Text style={{ fontSize: 14, color: colors.textSecondary, lineHeight: 20 }}>
+                I agree to the{" "}
+                <Text
+                  style={{ color: colors.primary, fontWeight: "600" }}
+                  onPress={() => router.push("/(auth)/privacy" as Href)}
+                >
+                  Privacy Policy
+                </Text>
+              </Text>
+            </AgreementCheckbox>
+          </View>
+
           <AuthButton
             title="Create Account"
             onPress={handleSignup}
             loading={loading}
-            disabled={!email || !password || !confirmPassword || !firstName || !lastName || password !== confirmPassword}
+            disabled={
+              !email ||
+              !password ||
+              !confirmPassword ||
+              !firstName ||
+              !lastName ||
+              password !== confirmPassword ||
+              !acceptedTerms ||
+              !acceptedPrivacy
+            }
           />
 
           <View style={authStyles.divider}>
