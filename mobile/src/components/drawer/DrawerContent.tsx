@@ -1,6 +1,6 @@
 // mobile/src/components/drawer/DrawerContent.tsx
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect } from "react";
 import { View, Text, Pressable, StyleSheet, Image } from "react-native";
 import { DrawerContentScrollView } from "@react-navigation/drawer";
 import type { DrawerContentComponentProps } from "@react-navigation/drawer";
@@ -8,44 +8,42 @@ import { useRouter, usePathname } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { drawerStyles } from "../../styles/drawerStyles";
 import { DrawerMenuItem } from "./DrawerMenuItem";
-import { fetchCurrentUser } from "../../lib/feed";
 import { useAuth } from "../../auth/AuthContext";
+import { useUser } from "../../context/UserContext";
 
 export function DrawerContent(props: DrawerContentComponentProps) {
   const router = useRouter();
   const pathname = usePathname();
-  const { logout, isAuthed, isReady } = useAuth();
-  const [userName, setUserName] = useState<string>("");
-  const [profilePicture, setProfilePicture] = useState<string>("");
+  const { logout } = useAuth();
+  const { user, refreshUser } = useUser();
 
+  // Refresh when drawer opens (to pick up profile changes)
   useEffect(() => {
-    // CRITICAL: Only fetch user if authenticated
-    if (!isReady || !isAuthed) {
-      console.log('[DRAWER] Skipping fetchCurrentUser - isReady:', isReady, 'isAuthed:', isAuthed);
-      setUserName("Guest");
-      return;
-    }
+    const unsubscribe = props.navigation.addListener('drawerOpen', () => {
+      console.log('[DRAWER] Drawer opened - refreshing user data');
+      refreshUser();
+    });
 
-    console.log('[DRAWER] Fetching current user...');
-    (async () => {
-      try {
-        const user = await fetchCurrentUser();
-        setUserName(user.name || "User");
-        setProfilePicture(user.profilePicture || "");
-        console.log('[DRAWER] Fetched user:', user.name);
-      } catch (err) {
-        console.error("[DRAWER] Failed to fetch current user:", err);
-        setUserName("User");
+    return unsubscribe;
+  }, [props.navigation]);
+
+  const getInitials = (): string => {
+    if (!user) return "??";
+
+    // Try to get initials from full name first, fallback to username
+    if (user.name) {
+      const words = user.name.split(" ");
+      if (words.length >= 2) {
+        return (words[0][0] + words[1][0]).toUpperCase();
       }
-    })();
-  }, [isReady, isAuthed]);
-
-  const getInitials = (name: string): string => {
-    const words = name.split(" ");
-    if (words.length >= 2) {
-      return (words[0][0] + words[1][0]).toUpperCase();
+      return user.name.substring(0, 2).toUpperCase();
     }
-    return name.substring(0, 2).toUpperCase();
+
+    if (user.username) {
+      return user.username.substring(0, 2).toUpperCase();
+    }
+
+    return "??";
   };
 
   const handleLogout = async () => {
@@ -72,19 +70,21 @@ export function DrawerContent(props: DrawerContentComponentProps) {
       <DrawerContentScrollView {...props} style={drawerStyles.container}>
         {/* Header with user info */}
         <View style={styles.header}>
-          {profilePicture ? (
+          {user?.avatarUrl ? (
             <Image
-              source={{ uri: profilePicture }}
+              source={{ uri: user.avatarUrl }}
               style={styles.profileImage}
             />
           ) : (
             <View style={styles.avatarContainer}>
-              <Text style={styles.avatarText}>{getInitials(userName)}</Text>
+              <Text style={styles.avatarText}>{getInitials()}</Text>
             </View>
           )}
-          <Text style={styles.userName} numberOfLines={1} ellipsizeMode="tail">
-            {userName}
-          </Text>
+          <View style={styles.userInfo}>
+            <Text style={styles.userName} numberOfLines={1} ellipsizeMode="tail">
+              {user?.username || "Guest"}
+            </Text>
+          </View>
         </View>
 
         {/* Menu items */}
@@ -146,11 +146,20 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     marginRight: 12,
   },
+  userInfo: {
+    flex: 1,
+    justifyContent: "center",
+  },
   userName: {
     fontSize: 16,
-    fontWeight: "600",
+    fontWeight: "700",
     color: "#fff",
-    flex: 1,
+  },
+  fullName: {
+    fontSize: 13,
+    fontWeight: "400",
+    color: "rgba(255, 255, 255, 0.7)",
+    marginTop: 2,
   },
   logoutContainer: {
     padding: 16,

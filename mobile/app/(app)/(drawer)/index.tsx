@@ -1,6 +1,6 @@
 // mobile/app/(app)/(tabs)/index.tsx
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import {
   View,
   Text,
@@ -9,6 +9,7 @@ import {
   Pressable,
   RefreshControl,
 } from "react-native";
+import { useFocusEffect } from "@react-navigation/native";
 import { feedStyles, feedColors } from "../../../src/styles/feedStyles";
 import { AppBar } from "../../../src/components/feed/AppBar";
 import { FeedHeader } from "../../../src/components/feed/FeedHeader";
@@ -16,13 +17,12 @@ import { FeedPost } from "../../../src/components/feed/FeedPost";
 import { CreatePostFAB } from "../../../src/components/feed/CreatePostFAB";
 import { CreatePostModal } from "../../../src/components/feed/CreatePostModal";
 import { useFeed } from "../../../src/hooks/useFeed";
-import { fetchCurrentUser } from "../../../src/lib/feed";
 import { useAuth } from "../../../src/auth/AuthContext";
+import { useUser } from "../../../src/context/UserContext";
 
 export default function HomeScreen() {
   const { isAuthed, isReady } = useAuth();
-  const [currentUserId, setCurrentUserId] = useState<string | undefined>();
-  const [currentUserName, setCurrentUserName] = useState<string | undefined>();
+  const { user } = useUser();
   const [isCreateModalVisible, setIsCreateModalVisible] = useState(false);
 
   const {
@@ -42,28 +42,15 @@ export default function HomeScreen() {
     changeSort,
   } = useFeed();
 
-  // Fetch current user on mount (only if authenticated)
-  useEffect(() => {
-    // CRITICAL: Don't fetch anything if not ready or not authenticated
-    if (!isReady || !isAuthed) {
-      console.log('[HOME] Skipping fetchCurrentUser - isReady:', isReady, 'isAuthed:', isAuthed);
-      return;
-    }
-
-    console.log('[HOME] Fetching current user...');
-    (async () => {
-      try {
-        const user = await fetchCurrentUser();
-        setCurrentUserId(user.id);
-        setCurrentUserName(user.name);
-        console.log('[HOME] Fetched user:', user.name);
-      } catch (err) {
-        console.error("[HOME] Failed to fetch current user:", err);
-        // This should NEVER happen if guards are working
-        console.error("[HOME] THIS IS A BUG - fetchCurrentUser called without auth!");
+  // Refresh feed when screen comes into focus (after profile updates)
+  useFocusEffect(
+    useCallback(() => {
+      if (isAuthed && isReady) {
+        console.log('[HOME] Screen focused - refreshing feed');
+        refresh();
       }
-    })();
-  }, [isAuthed, isReady]);
+    }, [isAuthed, isReady, refresh])
+  );
 
   // CRITICAL: Don't render anything until BOTH ready AND authenticated
   // This prevents API calls before user is logged in
@@ -161,8 +148,8 @@ export default function HomeScreen() {
         renderItem={({ item }) => (
           <FeedPost
             post={item}
-            currentUserId={currentUserId}
-            currentUserName={currentUserName}
+            currentUserId={user?.id}
+            currentUserName={user?.username}
             onLike={handleLike}
             onDelete={handleDelete}
           />

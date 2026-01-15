@@ -10,7 +10,7 @@ type RequestOptions = RequestInit & {
   timeoutMs?: number;
 };
 
-const DEFAULT_TIMEOUT_MS = 20000;
+const DEFAULT_TIMEOUT_MS = 60000;
 
 function withTimeout(timeoutMs: number | undefined) {
   const controller = new AbortController();

@@ -176,8 +176,6 @@ r.patch("/", requireAuth, async (req: AuthedRequest, res) => {
   res.json(updated);
 });
 
-export default r;
-
 // ---------- Change password ----------
 const changePasswordSchema = z.object({
   currentPassword: z.string().min(1, "Current password required"),
@@ -371,3 +369,5 @@ r.delete("/blocked/:userId", requireAuth, async (req: AuthedRequest, res) => {
     res.status(500).json({ error: "Failed to unblock user" });
   }
 });
+
+export default r;

@@ -42,17 +42,51 @@ export type Circle = {
   id: string;
   name: string;
   description?: string;
-  visibility?: string;
-  createdBy?: string;
-  membersCount?: number;
-  createdAt?: string;
+  visibility: 'public' | 'private';
+  createdBy: string;
+  members?: string[];
+  moderators?: string[];
+  inviteCode?: string;
+  membersCount: number;
+  postCount?: number;
+  createdAt: string;
   updatedAt?: string;
+  isMember?: boolean; // For discover list
+  permissions?: {
+    isOwner: boolean;
+    isModerator: boolean;
+    canInvite: boolean;
+    canPromote: boolean;
+  };
 };
 
 export type CirclesResponse = {
   page: number;
   limit: number;
   items: Circle[];
+};
+
+export type CircleInvitation = {
+  id: string;
+  circleId: string | { id: string; name: string; description?: string; visibility: string };
+  circleName?: string;
+  invitedBy: string;
+  inviterName?: string;
+  status: 'pending' | 'accepted' | 'declined';
+  createdAt: string;
+  expiresAt?: string;
+};
+
+export type CircleMember = {
+  id: string;
+  name: string;
+  email?: string;
+  username?: string;
+  avatarUrl?: string;
+  role: 'owner' | 'moderator' | 'member';
+  isOwner?: boolean;
+  isModerator?: boolean;
+  joinedAt?: string;
 };
 
 export type TmdbSearchResult = {
@@ -98,5 +132,15 @@ export type CurrentUser = {
   id: string;
   name: string;
   email: string;
+  username?: string;
   avatarUrl?: string;
+  publicCircleShowcaseIds?: string[];
+};
+
+export type StreamingService = {
+  _id: string;
+  name: string;
+  tmdbProviderId?: number;
+  displayPriority?: number;
+  logoPath?: string | null;
 };

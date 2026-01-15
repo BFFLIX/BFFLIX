@@ -158,16 +158,15 @@ r.post("/signup", async (req, res) => {
   const { email, password, name, username } = parsed.data;
 
   // Enforce strong password (policy + zxcvbn)
-  {
-    const pwCheck = validatePassword(password, { email, name });
-    if (!pwCheck.ok) {
-      return res.status(400).json({
-        error: "weak_password",
-        score: pwCheck.score,
-        details: pwCheck.errors,
-      });
-    }
+  const pwCheck = validatePassword(password, { email, name });
+  if (!pwCheck.ok) {
+    return res.status(400).json({
+      error: "weak_password",
+      score: pwCheck.score,
+      details: pwCheck.errors,
+    });
   }
+  
 
   try {
     const existing = await User.findOne({ email });
